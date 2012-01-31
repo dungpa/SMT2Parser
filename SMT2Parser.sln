@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SMT2Parser", "SMT2Parser.fsproj", "{4404BBC5-5CE1-44E2-9C78-CB632C217064}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4404BBC5-5CE1-44E2-9C78-CB632C217064}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4404BBC5-5CE1-44E2-9C78-CB632C217064}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4404BBC5-5CE1-44E2-9C78-CB632C217064}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4404BBC5-5CE1-44E2-9C78-CB632C217064}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
