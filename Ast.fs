@@ -1,5 +1,7 @@
 ﻿module SMT2.Ast
 
+let inline lst2Str xs = xs |> List.map string |> String.concat " "
+
 type Num = int
 
 type Sconstant =
@@ -8,39 +10,80 @@ type Sconstant =
     | Hexadecimal of Num
     | Binary of Num
     | String of string
+with override sc.ToString() =
+        match sc with
+        | Numeral n | Hexadecimal n | Binary n -> sprintf "%i" n // May output to appropriate formats
+        | Decimal f -> sprintf "%f" f        
+        | String s -> s
     
 type Symbol = Symbol of string
+with override sb.ToString() =
+        match sb with
+        | Symbol s -> s
 
 type Keyword = Keyword of string
+with override kw.ToString() =
+        match kw with
+        | Keyword s -> s
 
 type Sexpression =
     | Const of Sconstant
     | Sb of Symbol
     | Kw of Keyword
     | List of Sexpression list
+with override av.ToString() =
+        match av with
+        | Const sc -> string sc
+        | Sb sb -> string sb
+        | Kw kw -> string kw
+        | List ss -> sprintf "(%s)" (lst2Str ss)
 
 type Identifier =
     | Id of Symbol
     | IndexedId of Symbol * Num list
+with override id.ToString() =
+        match id with
+        | Id sb -> string sb
+        | IndexedId(sb, ns) -> sprintf "(_%s %s)" (string sb) (lst2Str ns)
 
 type AttrVal = 
     | AttrConst of Sconstant
     | AttrSym of Symbol
     | AttrSexp of Sexpression list
-    
+with override av.ToString() =
+        match av with
+        | AttrConst sc -> string sc
+        | AttrSym sb -> string sb
+        | AttrSexp ss -> sprintf "(%s)" (lst2Str ss)
+            
 type Attribute = 
     | Attr of Keyword
     | CompAttr of Keyword * AttrVal
+with override a.ToString() =
+        match a with
+        | Attr kw -> string kw
+        | CompAttr(kw, av) -> sprintf "%s %s" (string kw) (string av)
 
 type Sort =
     | Sort of Identifier
     | CompSort of Identifier * Sort list
+with override s.ToString() =
+        match s with
+        | Sort id -> string id
+        | CompSort(id, ss) -> sprintf "(%s %s)" (string id) (lst2Str ss)
 
 type QualIdent = 
     | QualIdent of Identifier
     | CompQualIdent of Identifier * Sort
+with override qi.ToString() =
+        match qi with
+        | QualIdent id -> string id
+        | CompQualIdent(id, s) -> sprintf "(as %s %s)" (string id) (string s)
 
 type SortedVar = SortedVar of Symbol * Sort
+with override sv.ToString() =
+        match sv with
+        | SortedVar(s1, s2) -> sprintf "(%s %s)" (string s1) (string s2)
 
 type Term = 
     | ConstTerm of Sconstant
@@ -50,31 +93,67 @@ type Term =
     | Forall of SortedVar list * Term
     | Exists of SortedVar list * Term
     | AttrTerm of Term * Attribute list
+with override t.ToString() =
+        match t with
+        | ConstTerm sc -> string sc
+        | QualTerm qi -> string qi
+        | CompQualTerm(qi, ts) -> sprintf "(%s %s)" (string qi) (lst2Str ts)
+        | Let(vbs, t) -> sprintf "(let (%s) %s)" (lst2Str vbs) (string t)
+        | Forall(svs, t) -> sprintf "(forall (%s) %s)" (lst2Str svs) (string t)
+        | Exists(svs, t) -> sprintf "(exists (%s) %s)" (lst2Str svs) (string t)
+        | AttrTerm(t, ats) -> sprintf "(! %s %s)" (string t) (lst2Str ats)
 
 and VarBinding = VarBinding of Symbol * Term
+    with override vb.ToString() =
+            match vb with
+            | VarBinding(s, t) -> sprintf "(%s %s)" (string s) (string t)
+
 
 type BoolConfigType =
     | PrintSuccess
-    | ExpandDefinition
+    | ExpandDefinitions
     | InteractiveMode
     | ProduceProofs
-    | ProduceUnsatCore
+    | ProduceUnsatCores
     | ProduceModels
     | ProduceAssignments
+with override bct.ToString() =
+        match bct with
+        | PrintSuccess -> ":print-success"
+        | ExpandDefinitions -> ":expand-definitions"
+        | InteractiveMode -> ":interactive-mode"
+        | ProduceProofs -> ":produce-proofs"
+        | ProduceUnsatCores -> ":produce-unsat-cores"
+        | ProduceModels -> ":produce-models"
+        | ProduceAssignments -> ":produce-assignments"
 
 type StringConfigType =
     | RegularOutputChannel
     | DiagnosticOutputChannel
+with override sct.ToString() =
+        match sct with
+        | RegularOutputChannel -> ":regular-output-channel"
+        | DiagnosticOutputChannel -> ":diagnostic-output-channel"
 
 type NumeralConfigType =
     | RandomSeed
     | Verbosity
+with override nct.ToString() =
+        match nct with
+        | RandomSeed -> ":random-seed"
+        | Verbosity -> ":verbosity"
 
 type Option =
     | BoolConfig of BoolConfigType * bool
     | StringConfig of StringConfigType * string
     | NumeralConfig of NumeralConfigType * Num
     | AttrOption of Attribute
+with override o.ToString() =
+        match o with
+        | BoolConfig(bct, b) -> sprintf "%s %b" (string bct) b
+        | StringConfig(sct, s) -> sprintf "%s %s" (string sct) s
+        | NumeralConfig(nct, n) -> sprintf "%s %i" (string nct) n
+        | AttrOption ao -> string ao
 
 type Flag = 
     | ErrorBehaviour
@@ -84,10 +163,23 @@ type Flag =
     | Status
     | ReasonUnknown
     | AllStatistics
+with override f.ToString() =
+        match f with
+        | ErrorBehaviour -> ":error-behaviour"
+        | Name -> ":name"
+        | Authors -> ":authors"
+        | Version -> ":version"
+        | Status -> ":status"
+        | ReasonUnknown -> ":reason-unknown"
+        | AllStatistics -> ":all-statistics"
 
 type InfoFlag =
     | BuiltinFlag of Flag
     | CustomFlag of Keyword
+with override inf.ToString() =
+        match inf with
+        | BuiltinFlag f -> string f
+        | CustomFlag kw -> string kw
 
 type Command =
     | SetLogic of Symbol
@@ -109,3 +201,24 @@ type Command =
     | GetOption of Keyword
     | GetInfo of InfoFlag
     | Exit
+with override c.ToString() =
+        match c with
+        | SetLogic s -> sprintf "(set-logic %s)" <| string s
+        | SetOption o -> sprintf "(set-option %s)" <| string o
+        | SetInfo i -> sprintf "(set-info %s)" <| string i
+        | DeclareSort(s, n) -> sprintf "(declare-sort %s %i)" (string s) n
+        | DefineSort(s1, ss, s2) -> sprintf "(define-sort %s (%s) %s)" (string s1) (lst2Str ss) (string s2)
+        | DeclareFun(s1, ss, s2) -> sprintf "(declare-fun %s (%s) %s)" (string s1) (lst2Str ss) (string s2)
+        | DefineFun(s1, svs, s2, t) -> sprintf "(define-fun %s (%s) %s %s)" (string s1) (lst2Str svs) (string s2) (string t)
+        | Push n -> sprintf "(push %i)" n
+        | Pop n -> sprintf "(pop %i)" n
+        | Assert t -> sprintf "(pop %s)" <| string t
+        | CheckSat -> "(check-sat)"
+        | GetAssertions -> "(get-assertions)"
+        | GetProof -> "(get-proof)"
+        | GetUnsatCore -> "(get-unsat-core)"
+        | GetValue ts -> sprintf "(get-value %s)" <| lst2Str ts
+        | GetAssignment -> "(get-assignment)"
+        | GetOption kw -> sprintf "(get-option %s)" <| string kw
+        | GetInfo inf -> sprintf "(get-info %s)" <| string inf
+        | Exit -> "(exit)"
