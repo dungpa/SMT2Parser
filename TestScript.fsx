@@ -27,7 +27,7 @@ let testAll p xs =
 ["\"\""; "\"this is a string literal\""; 
 "\"one\n two\""; "\"She said: \"Hello!\"\""; 
 "\"Here is a backslash: \\\""]
-|> testAll parseString;;
+|> testAll parseStringLiteral;;
 
 // The last symbol should be parsable.
 ["+"; "<="; "x"; "plus"; "**"; "$"; "<sas"; "<adf>";
@@ -77,3 +77,10 @@ let testAll p xs =
 "(exit)";
 ]
 |> testAll parseCommand;;
+
+[
+" true";
+" false";
+"(push 1)";
+]
+|> testAll parseBoolean;;

@@ -13,8 +13,8 @@ type Sconstant =
 with override sc.ToString() =
         match sc with
         | Numeral n | Hexadecimal n | Binary n -> sprintf "%i" n // May output to appropriate formats
-        | Decimal f -> sprintf "%f" f        
-        | String s -> s
+        | Decimal f -> sprintf "%.1f" f        
+        | String s -> sprintf "\"%s\"" s
     
 type Symbol = Symbol of string
 with override sb.ToString() =
@@ -108,70 +108,43 @@ and VarBinding = VarBinding of Symbol * Term
             match vb with
             | VarBinding(s, t) -> sprintf "(%s %s)" (string s) (string t)
 
+type BCT =
+    | ``:print-success`` = 0
+    | ``:expand-definitions`` = 1
+    | ``:interactive-mode`` = 2
+    | ``:produce-proofs`` = 3
+    | ``:produce-unsat-cores`` = 4
+    | ``:produce-models``= 5
+    | ``:produce-assignments`` = 6
 
-type BoolConfigType =
-    | PrintSuccess
-    | ExpandDefinitions
-    | InteractiveMode
-    | ProduceProofs
-    | ProduceUnsatCores
-    | ProduceModels
-    | ProduceAssignments
-with override bct.ToString() =
-        match bct with
-        | PrintSuccess -> ":print-success"
-        | ExpandDefinitions -> ":expand-definitions"
-        | InteractiveMode -> ":interactive-mode"
-        | ProduceProofs -> ":produce-proofs"
-        | ProduceUnsatCores -> ":produce-unsat-cores"
-        | ProduceModels -> ":produce-models"
-        | ProduceAssignments -> ":produce-assignments"
+type SCT =
+    | ``:regular-output-channel`` = 0
+    | ``:diagnostic-output-channel`` = 1
 
-type StringConfigType =
-    | RegularOutputChannel
-    | DiagnosticOutputChannel
-with override sct.ToString() =
-        match sct with
-        | RegularOutputChannel -> ":regular-output-channel"
-        | DiagnosticOutputChannel -> ":diagnostic-output-channel"
-
-type NumeralConfigType =
-    | RandomSeed
-    | Verbosity
-with override nct.ToString() =
-        match nct with
-        | RandomSeed -> ":random-seed"
-        | Verbosity -> ":verbosity"
+type NCT =
+    | ``:random-seed`` = 0
+    | ``:verbosity`` = 1
 
 type Option =
-    | BoolConfig of BoolConfigType * bool
-    | StringConfig of StringConfigType * string
-    | NumeralConfig of NumeralConfigType * Num
+    | BoolConfig of BCT * bool
+    | StringConfig of SCT * string
+    | NumeralConfig of NCT * Num
     | AttrOption of Attribute
 with override o.ToString() =
         match o with
         | BoolConfig(bct, b) -> sprintf "%s %b" (string bct) b
-        | StringConfig(sct, s) -> sprintf "%s %s" (string sct) s
+        | StringConfig(sct, s) -> sprintf "%s \"%s\"" (string sct) s
         | NumeralConfig(nct, n) -> sprintf "%s %i" (string nct) n
         | AttrOption ao -> string ao
 
 type Flag = 
-    | ErrorBehaviour
-    | Name
-    | Authors
-    | Version
-    | Status
-    | ReasonUnknown
-    | AllStatistics
-with override f.ToString() =
-        match f with
-        | ErrorBehaviour -> ":error-behaviour"
-        | Name -> ":name"
-        | Authors -> ":authors"
-        | Version -> ":version"
-        | Status -> ":status"
-        | ReasonUnknown -> ":reason-unknown"
-        | AllStatistics -> ":all-statistics"
+    | ``:error-behaviour`` = 0
+    | ``:name`` = 1
+    | ``:authors`` = 2
+    | ``:version`` = 3
+    | ``:status`` = 4
+    | ``:reason-unknown`` = 5
+    | ``:all-statistics`` = 6
 
 type InfoFlag =
     | BuiltinFlag of Flag
@@ -212,12 +185,12 @@ with override c.ToString() =
         | DefineFun(s1, svs, s2, t) -> sprintf "(define-fun %s (%s) %s %s)" (string s1) (lst2Str svs) (string s2) (string t)
         | Push n -> sprintf "(push %i)" n
         | Pop n -> sprintf "(pop %i)" n
-        | Assert t -> sprintf "(pop %s)" <| string t
+        | Assert t -> sprintf "(assert %s)" <| string t
         | CheckSat -> "(check-sat)"
         | GetAssertions -> "(get-assertions)"
         | GetProof -> "(get-proof)"
         | GetUnsatCore -> "(get-unsat-core)"
-        | GetValue ts -> sprintf "(get-value %s)" <| lst2Str ts
+        | GetValue ts -> sprintf "(get-value (%s))" <| lst2Str ts
         | GetAssignment -> "(get-assignment)"
         | GetOption kw -> sprintf "(get-option %s)" <| string kw
         | GetInfo inf -> sprintf "(get-info %s)" <| string inf

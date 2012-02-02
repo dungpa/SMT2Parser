@@ -30,7 +30,8 @@ let betweenStrings s1 s2 p = str s1 >>. p .>> str s2
 
 // Lexical syntax
 
-let pComment: SMT2Parser<_> = pstring ";" >>. skipRestOfLine true
+// Currently not keep information about comments
+let pComment = spaces >>. pchar ';' .>> skipRestOfLine true
 
 // spaces will match common whitespaces
 let pSpacing: SMT2Parser<_> = skipSepBy spaces pComment
@@ -54,26 +55,27 @@ let parseNumber =
     let isNextDigit c = isDigit c || c = '.'
     let numOrDec = many1Satisfy2 isDigit isNextDigit 
     let hexOrBin = str "#" >>. manyChars (letter <|> digit) |>> fun s -> sprintf "0%s" s
-    
     parse {
+            do! spaces
             let! s = numOrDec <|> hexOrBin
             match run pNumber <| s with
             | Success(result, _, _)   -> return result
             | Failure(_, _, _) -> ()
     }
 
-let pString = 
-    betweenStrings "\"" "\"" <| manyChars (noneOf "\"")
+// This method cause a lot of confusion
+let pStringLiteral = 
+    spaces >>. (betweenStrings "\"" "\"" <| manyChars (noneOf "\""))
 
-let parseString = pString |>> String
+let parseStringLiteral = pStringLiteral |>> String
 
-let parseConst = parseNumber <|> parseString    
+let parseConst = parseNumber <|> parseStringLiteral    
 
 let pSymbol =    
     attempt (parse {
             let! symbol = many1Satisfy2 (fun c -> isLetter c || isSymbol c) (fun c -> isDigit c || isLetter c || isSymbol c)
             if Set.contains symbol reservedWords then 
-               failwith "pSymbol: reserved word" 
+               failwith <| sprintf "pSymbol: reserved word of %s" symbol
             else
                 return symbol
         })
@@ -84,7 +86,7 @@ let parseSymbol = pSymbol |>> Symbol
 
 // TODO: process keywords
 let pKeyword = 
-    str ":" >>. manyChars (letter <|> symbol <|> digit)
+    many1Satisfy2 (fun c -> c = ':') (fun c -> isDigit c || isLetter c || isSymbol c)
 
 let parseKeyword = pKeyword |>> Keyword
 
@@ -205,7 +207,8 @@ do parseTermRef := (parseConst |>> ConstTerm)
                             do! spaces1
                             do! chr '('                            
                             let! xs = sepBy parseVarBinding spaces1
-                            do! chr ')' 
+                            do! chr ')'
+                            do! spaces1 
                             let! term = parseTerm
                             do! chr ')' 
                             match xs with
@@ -219,6 +222,7 @@ do parseTermRef := (parseConst |>> ConstTerm)
                             do! chr '('                            
                             let! xs = sepBy parseSortedVar spaces1
                             do! chr ')' 
+                            do! spaces1
                             let! term = parseTerm
                             do! chr ')' 
                             match xs with
@@ -254,76 +258,79 @@ do parseTermRef := (parseConst |>> ConstTerm)
 
 // NB: currently not support Logic Declarations
 
-let parseBoolean = (stringReturn "true"  true) <|> (stringReturn "false" false)
+let parseBoolean = spaces >>. ((stringReturn "true" true) <|> (stringReturn "false" false))
 
 let parseOption = 
-    (parseAttribute |>> AttrOption)
-    <|> parse {
-            let! s = pString
+    (parse {
+            let! s = manyChars (digit <|> letter <|> symbol)
             match s with
             | ":print-success" -> let! b = parseBoolean
-                                  return BoolConfig(PrintSuccess, b)
-            | ":expand-definition" -> 
+                                  return BoolConfig(BCT.``:print-success``, b)
+            | ":expand-definitions" -> 
                                   let! b = parseBoolean
-                                  return BoolConfig(ExpandDefinitions, b)
+                                  return BoolConfig(BCT.``:expand-definitions``, b)
             | ":interactive-mode" -> 
                                   let! b = parseBoolean
-                                  return BoolConfig(InteractiveMode, b)
+                                  return BoolConfig(BCT.``:interactive-mode``, b)
             | ":produce-proofs" -> 
                                   let! b = parseBoolean
-                                  return BoolConfig(ProduceProofs, b)
+                                  return BoolConfig(BCT.``:produce-proofs``, b)
+            | ":produce-unsat-cores" -> 
+                                  let! b = parseBoolean
+                                  return BoolConfig(BCT.``:produce-unsat-cores``, b)
             | ":produce-models" -> 
                                   let! b = parseBoolean
-                                  return BoolConfig(ProduceModels, b)
+                                  return BoolConfig(BCT.``:produce-models``, b)
             | ":produce-assignments" -> 
                                   let! b = parseBoolean
-                                  return BoolConfig(ProduceAssignments, b)
+                                  return BoolConfig(BCT.``:produce-assignments``, b)
             | ":regular-output-channel" ->
-                                  let! s' = pString
-                                  return StringConfig(RegularOutputChannel, s')
+                                  let! s' = pStringLiteral
+                                  return StringConfig(SCT.``:regular-output-channel``, s')
             | ":diagnostic-output-channel" ->
-                                  let! s' = pString
-                                  return StringConfig(DiagnosticOutputChannel, s')
+                                  let! s' = pStringLiteral
+                                  return StringConfig(SCT.``:diagnostic-output-channel``, s')
             | ":random-seed" ->
                                   let! n = parseNumber
                                   match n with
-                                  | Numeral i -> return NumeralConfig(RandomSeed, i)
+                                  | Numeral i -> return NumeralConfig(NCT.``:random-seed``, i)
                                   | _ -> failwith "parseOption: wrong numeral format"
             | ":verbosity" ->
                                   let! n = parseNumber
                                   match n with
-                                  | Numeral i -> return NumeralConfig(Verbosity, i)
+                                  | Numeral i -> return NumeralConfig(NCT.``:verbosity``, i)
                                   | _ -> failwith "parseOption: wrong numeral format"
-            | _ -> failwith "parseOption: unknown config"
-    }
+            | _ -> failwith <| sprintf "parseOption: unknown config of %s" s
+    })
+    <|> (parseAttribute |>> AttrOption)
 
 let parseInfoFlag =     
-    attempt (parse {
-            let! s = manyChars (digit <|> letter <|> symbol)
+    parse {
+            let! s = pKeyword
             match s with
-            | ":error-behaviour" -> return BuiltinFlag ErrorBehaviour
-            | ":name" -> return BuiltinFlag ErrorBehaviour
-            | ":version" -> return BuiltinFlag Version
-            | ":status" -> return BuiltinFlag Status
-            | ":reason-unknown" -> return BuiltinFlag ReasonUnknown
-            | ":all-statistics" -> return BuiltinFlag AllStatistics
-            | _ -> failwith "parseInfoFlag: unknown flag"
-    })
-    <|> (parseKeyword |>> CustomFlag) // It shouldn't match builtin flags.
+            | ":error-behaviour" -> return BuiltinFlag Flag.``:error-behaviour``
+            | ":name" -> return BuiltinFlag Flag.``:name``
+            | ":authors" -> return BuiltinFlag Flag.``:authors``
+            | ":version" -> return BuiltinFlag Flag.``:version``
+            | ":status" -> return BuiltinFlag Flag.``:status``
+            | ":reason-unknown" -> return BuiltinFlag Flag.``:reason-unknown``
+            | ":all-statistics" -> return BuiltinFlag Flag.``:all-statistics``
+            | _ -> return CustomFlag (Keyword s)
+    }
 
 let parseCommand = 
     attempt (parse {
             do! chr '('            
-            let! s = manyChars (digit <|> letter <|> symbol)
+            let! s = spaces >>. manyChars (digit <|> letter <|> symbol)
             do! chr ')'
             match s with
             | "check-sat" -> return CheckSat
             | "get-assertions" -> return GetAssertions
-            | "get-proofs" -> return GetProof
+            | "get-proof" -> return GetProof
             | "get-unsat-core" -> return GetUnsatCore
             | "get-assignment" -> return GetAssignment
             | "exit" -> return Exit
-            | _ -> failwith "TODO: don't know how to backtrack to parse other cases"
+            | _ -> failwith <| sprintf "parseCommand: not a nullary command of %s" s
     })
     <|> attempt (parse {
             do! chr '('
@@ -366,9 +373,11 @@ let parseCommand =
             do! skipString "define-sort"
             do! spaces1
             let! symbol = parseSymbol
+            do! spaces1
             do! chr '('
             let! symbols = sepBy parseSymbol spaces1
             do! chr ')'
+            do! spaces1
             let! sort = parseSort
             do! chr ')'
             return DefineSort(symbol, symbols, sort)
@@ -378,9 +387,11 @@ let parseCommand =
             do! skipString "declare-fun"
             do! spaces1
             let! symbol = parseSymbol
+            do! spaces1
             do! chr '('
             let! sorts = sepBy parseSort spaces1
             do! chr ')'
+            do! spaces1
             let! sort = parseSort
             do! chr ')'
             return DeclareFun(symbol, sorts, sort)
@@ -390,10 +401,13 @@ let parseCommand =
             do! skipString "define-fun"
             do! spaces1
             let! symbol = parseSymbol
+            do! spaces1
             do! chr '('
             let! sortedVars = sepBy parseSortedVar spaces1
             do! chr ')'
+            do! spaces1
             let! sort = parseSort
+            do! spaces1
             let! term = parseTerm
             do! chr ')'
             return DefineFun(symbol, sortedVars, sort, term)
@@ -430,7 +444,9 @@ let parseCommand =
             do! chr '('
             do! skipString "get-value"
             do! spaces1
+            do! chr '('
             let! terms = sepBy parseTerm spaces1
+            do! chr ')'
             do! chr ')'
             match terms with
             | [] -> failwith "parseCommand: should have at least one term"
@@ -453,4 +469,4 @@ let parseCommand =
             return GetInfo infoFlag
     }
 
-let parse = many parseCommand
+let parse = sepBy parseCommand (newline <|> pComment) .>> eof
