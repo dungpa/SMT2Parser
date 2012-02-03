@@ -18,9 +18,12 @@
 - May find shorter representation of enum toString.
 
 2012.02.02:
-- Need A common function for parsing string without whitespace.
+- Need a common function for parsing string without whitespace.
 - The official smt2 standard doesn't support declare-const, echo, display, simplify, help, get-model, declare-datatypes, eval.
 - Currently does not support comments (out of line and in line).
 - Need to find out how to treat (push) and (pop) convention of Z3.
 - Could mix between built-in flags and custom flags.
 - Currently does not support multiline commands.
+
+2012.02.03:
+- Replaced sepEndBy by sepEndBy1 in appropriate cases.

@@ -13,8 +13,8 @@ type SMT2Parser<'a> = Parser<'a, unit>
 let SYMBOLS = ".!$%&|*+-/:<=>?@^_~#"
 let symbol: SMT2Parser<char> = anyOf SYMBOLS
 
-let chr c = skipChar c 
-let endBy p sep = many (p .>> sep)
+let chr_ws c = skipChar c .>> spaces
+let ws_chr c = spaces >>. skipChar c
 
 let isSymbol (c: char) = SYMBOLS.Contains(string c)
 let reservedWords = set [
@@ -36,8 +36,6 @@ let pComment = spaces >>. pchar ';' .>> skipRestOfLine true
 // spaces will match common whitespaces
 let pSpacing: SMT2Parser<_> = skipSepBy spaces pComment
 
-let pEndOfFile = eof
-
 // Numeral | Decimal | Hexadecimal | Binary
 let numberFormat = NumberLiteralOptions.AllowFraction
                    ||| NumberLiteralOptions.AllowHexadecimal
@@ -56,8 +54,7 @@ let parseNumber =
     let numOrDec = many1Satisfy2 isDigit isNextDigit 
     let hexOrBin = str "#" >>. manyChars (letter <|> digit) |>> fun s -> sprintf "0%s" s
     parse {
-            do! spaces
-            let! s = numOrDec <|> hexOrBin
+            let! s = spaces >>. numOrDec <|> hexOrBin
             match run pNumber <| s with
             | Success(result, _, _)   -> return result
             | Failure(_, _, _) -> ()
@@ -74,10 +71,10 @@ let parseConst = parseNumber <|> parseStringLiteral
 let pSymbol =    
     attempt (parse {
             let! symbol = many1Satisfy2 (fun c -> isLetter c || isSymbol c) (fun c -> isDigit c || isLetter c || isSymbol c)
-            if Set.contains symbol reservedWords then 
-               failwith <| sprintf "pSymbol: reserved word of %s" symbol
-            else
-                return symbol
+//            if Set.contains symbol reservedWords then 
+//               failwith <| sprintf "pSymbol: reserved word of %s" symbol
+//            else
+            return symbol
         })
     <|> (betweenStrings "|" "|" (manyChars (noneOf "|"))) // The order does matter
     
@@ -94,7 +91,7 @@ let parseKeyword = pKeyword |>> Keyword
 let parseSexpr, parseSexprRef: SMT2Parser<_> * SMT2Parser<_> ref = createParserForwardedToRef() 
  
 // Just expressions separated by one or more spaces 
-let parseSexpList = sepBy parseSexpr spaces1
+let parseSexpList = sepEndBy parseSexpr spaces1
 
 // A SMTParser<_> can be one of the below
 // TODO: note that the definition for list need to backtrack to disambinguate the two cases 
@@ -108,18 +105,10 @@ do parseSexprRef := choice [
 // TODO: many ugly cases need to be handled.
 let parseIdentifier: SMT2Parser<_> =        
     attempt (parse {
-                do! chr '(' 
-                do! spaces // TODO: should at least one whitespace
-                do! chr '_'
-                do! spaces1
-                let! symbol = parseSymbol
-                do! spaces1
-                let! xs = parseSexpList
-                do! chr ')' 
+                let! symbol = chr_ws '(' >>. skipChar '_' >>. spaces1 >>. parseSymbol // skipChar is unnatural
+                let! xs = spaces1 >>. sepEndBy1 parseSexpr spaces1 .>> ws_chr ')' 
                 let ns = xs |> List.map (function | Const(Numeral i) -> i | _ -> failwith "parseIdentifier: Wrong format") 
-                match ns with
-                | []-> failwith "parseIdentifier: Should have at least one numeral"
-                | _ -> return IndexedId (symbol, ns)                 
+                return IndexedId (symbol, ns)                 
         })
     <|> (parseSymbol |>> Id)
 
@@ -131,127 +120,74 @@ let parseAttrVal =
 let parseAttribute: SMT2Parser<_> =    
     attempt (parse {
                 let! kw = parseKeyword
-                do! spaces1
-                let! attrVal = parseAttrVal
+                let! attrVal = spaces1 >>. parseAttrVal
                 return CompAttr(kw, attrVal)
         })
     <|> (parseKeyword |>> Attr)
 
 let parseSort, parseSortRef: SMT2Parser<_> * SMT2Parser<_> ref = createParserForwardedToRef() 
  
-let pSortList: SMT2Parser<_> = sepBy parseSort spaces1
+let pSortList1: SMT2Parser<_> = sepEndBy1 parseSort spaces1
 
 do parseSortRef :=  attempt (parseIdentifier |>> Sort)
-                    <|> parse { 
-                            do! chr '('                             
-                            let! id = parseIdentifier        
-                            do! spaces1                    
-                            let! xs = pSortList                            
-                            do! chr ')' 
-                            match xs with
-                            | []-> failwith "parseSortRef: should have at least one sort declaration"
-                            | _ -> return CompSort(id, xs) 
+                    <|> parse {                              
+                            let! id = chr_ws '(' >>. parseIdentifier
+                            let! xs = spaces1 >>. pSortList1 .>> ws_chr ')'
+                            return CompSort(id, xs) 
                         } 
 
 let parseQualIdent: SMT2Parser<_> =    
-    attempt (parse {
-                do! chr '('                
-                do! skipString "as"                
-                let! id = parseIdentifier   
-                do! spaces1             
-                let! sort = parseSort
-                do! chr ')'          
+    attempt (parse {                
+                let! id = chr_ws '(' >>. skipString "as" >>. spaces1 >>. parseIdentifier
+                let! sort = spaces1 >>. parseSort .>> ws_chr ')'
                 return CompQualIdent(id, sort) 
         })
     <|> (parseIdentifier |>> QualIdent)
 
 let parseSortedVar = 
     parse {
-            do! chr '('
-            let! symbol = parseSymbol
-            do! spaces1
-            let! sort = parseSort
-            do! chr ')'
+            let! symbol = chr_ws '(' >>. parseSymbol
+            let! sort = spaces1 >>. parseSort .>> ws_chr ')'
             return SortedVar(symbol, sort)
     }
 
 let parseTerm, parseTermRef: SMT2Parser<_> * SMT2Parser<_> ref = createParserForwardedToRef() 
  
-let pTermList: SMT2Parser<_> = sepBy parseTerm spaces1
+let pTermList1: SMT2Parser<_> = sepEndBy1 parseTerm spaces1
 
 let parseVarBinding = 
     parse {
-            do! chr '('
-            let! symbol = parseSymbol
-            do! spaces1
-            let! term = parseTerm
-            do! chr ')'
+            let! symbol = chr_ws '(' >>. parseSymbol
+            let! term = spaces1 >>. parseTerm .>> ws_chr ')'
             return VarBinding(symbol, term)
     }
 
-do parseTermRef := (parseConst |>> ConstTerm)
-                    <|> (parseQualIdent |>> QualTerm)
+do parseTermRef := attempt (parseConst |>> ConstTerm)
+                    <|> attempt (parseQualIdent |>> QualTerm)
+                    <|> attempt (parse {                  
+                            let! qi = chr_ws '(' >>. parseQualIdent
+                            let! ts = spaces1 >>. pTermList1 .>> ws_chr ')'
+                            return CompQualTerm(qi, ts) 
+                        }) 
                     <|> parse { 
-                            do! chr '('                  
-                            let! qi = parseQualIdent
-                            do! spaces1
-                            let! ts = pTermList                                                        
-                            do! chr ')' 
-                            match ts with
-                            | []-> failwith "parseTermRef: should have at least one term"
-                            | _ -> return CompQualTerm(qi, ts) 
-                        } 
-                    <|> parse { 
-                            do! chr '('       
-                            do! skipString "let"
-                            do! spaces1
-                            do! chr '('                            
-                            let! xs = sepBy parseVarBinding spaces1
-                            do! chr ')'
-                            do! spaces1 
-                            let! term = parseTerm
-                            do! chr ')' 
-                            match xs with
-                            | []-> failwith "parseTermRef: should have at least one sorted var"
-                            | _ -> return Let(xs, term) 
-                        } 
-                    <|> parse { // should merge these two cases (forall, exists) together
-                            do! chr '('       
-                            do! skipString "forall"
-                            do! spaces1
-                            do! chr '('                            
-                            let! xs = sepBy parseSortedVar spaces1
-                            do! chr ')' 
-                            do! spaces1
-                            let! term = parseTerm
-                            do! chr ')' 
-                            match xs with
-                            | []-> failwith "parseTermRef: should have at least one sorted var"
-                            | _ -> return Forall(xs, term) 
-                        } 
-                    <|> parse { 
-                            do! chr '('       
-                            do! skipString "exists"
-                            do! spaces1
-                            do! chr '('                            
-                            let! xs = sepBy parseSortedVar spaces1
-                            do! chr ')' 
-                            let! term = parseTerm
-                            do! chr ')' 
-                            match xs with
-                            | []-> failwith "parseTermRef: should have at least one sorted var"
-                            | _ -> return Exists(xs, term) 
-                        } 
-                    <|> parse {
-                            do! chr '('
-                            do! chr '!'
-                            let! term = parseTerm
-                            do! spaces1
-                            let! attrs = sepBy parseAttribute spaces1
-                            do! chr ')'
-                            match attrs with
-                            | []-> failwith "parseTermRef: should have at least one attribute"
-                            | _ -> return AttrTerm(term, attrs) 
+                            let! s = chr_ws '(' >>. manyChars (digit <|> letter <|> symbol) .>> spaces1
+                            match s with
+                            | "let" -> let! xs = chr_ws '(' >>. sepEndBy1 parseVarBinding spaces1 .>> ws_chr ')'
+                                       let! term = spaces1 >>. parseTerm .>> ws_chr ')'
+                                       return Let(xs, term) 
+                            | "forall" -> 
+                                       let! xs = chr_ws '(' >>. sepEndBy1 parseSortedVar spaces1 .>> ws_chr ')'
+                                       let! term = spaces1 >>. parseTerm .>> ws_chr ')'
+                                       return Forall(xs, term) 
+                            | "exists" -> 
+                                       let! xs = chr_ws '(' >>. sepEndBy1 parseSortedVar spaces1 .>> ws_chr ')'
+                                       let! term = spaces1 >>. parseTerm .>> ws_chr ')'
+                                       return Exists(xs, term) 
+                            | "!" -> let! term = parseTerm
+                                     let! attrs = spaces1 >>. sepEndBy1 parseAttribute spaces1 .>> ws_chr ')'
+                                     return AttrTerm(term, attrs)
+                            | _ -> failwith <| sprintf "Unknown term of %s" s
+                             
                         }
 
 // NB: currently not support Theory Declarations
@@ -300,7 +236,7 @@ let parseOption =
                                   match n with
                                   | Numeral i -> return NumeralConfig(NCT.``:verbosity``, i)
                                   | _ -> failwith "parseOption: wrong numeral format"
-            | _ -> failwith <| sprintf "parseOption: unknown config of %s" s
+            | _ -> failwith <| sprintf "parseOption: unknown config of %s" s // should roll back here and parse attr option
     })
     <|> (parseAttribute |>> AttrOption)
 
@@ -320,9 +256,7 @@ let parseInfoFlag =
 
 let parseCommand = 
     attempt (parse {
-            do! chr '('            
-            let! s = spaces >>. manyChars (digit <|> letter <|> symbol)
-            do! chr ')'
+            let! s = chr_ws '(' >>. manyChars (digit <|> letter <|> symbol) .>> ws_chr ')'
             match s with
             | "check-sat" -> return CheckSat
             | "get-assertions" -> return GetAssertions
@@ -333,140 +267,61 @@ let parseCommand =
             | _ -> failwith <| sprintf "parseCommand: not a nullary command of %s" s
     })
     <|> attempt (parse {
-            do! chr '('
-            do! skipString "set-logic"
-            do! spaces1
-            let! symbol = parseSymbol
-            do! chr ')'
-            return SetLogic symbol
-    })
-    <|> attempt (parse {
-            do! chr '('
-            do! skipString "set-option"
-            do! spaces1
-            let! option = parseOption
-            do! chr ')'
-            return SetOption option
-    })
-    <|> attempt (parse {
-            do! chr '('
-            do! skipString "set-info"
-            do! spaces1
-            let! attr = parseAttribute
-            do! chr ')'
-            return SetInfo attr
-    })
-    <|> attempt (parse {
-            do! chr '('
-            do! skipString "declare-sort"
-            do! spaces1
-            let! symbol = parseSymbol
-            do! spaces1
-            let! num = parseNumber
-            do! chr ')'
+            let! symbol = chr_ws '(' >>. skipString "declare-sort" >>. spaces1 >>. parseSymbol
+            let! num = spaces1 >>. parseNumber .>>  ws_chr ')'
             match num with
             | Numeral i -> return DeclareSort(symbol, i)
             | _ -> failwith "parseCommand: wrong numeral format"
     })
     <|> attempt (parse {
-            do! chr '('
-            do! skipString "define-sort"
-            do! spaces1
-            let! symbol = parseSymbol
-            do! spaces1
-            do! chr '('
-            let! symbols = sepBy parseSymbol spaces1
-            do! chr ')'
-            do! spaces1
-            let! sort = parseSort
-            do! chr ')'
+            let! symbol = chr_ws '(' >>. skipString "define-sort" >>. spaces1 >>. parseSymbol
+            let! symbols = spaces1 >>. chr_ws '(' >>. sepEndBy parseSymbol spaces1 .>>  ws_chr ')'
+            let! sort = spaces1 >>. parseSort .>> ws_chr ')'
             return DefineSort(symbol, symbols, sort)
     })
     <|> attempt (parse {
-            do! chr '('
-            do! skipString "declare-fun"
-            do! spaces1
-            let! symbol = parseSymbol
-            do! spaces1
-            do! chr '('
-            let! sorts = sepBy parseSort spaces1
-            do! chr ')'
-            do! spaces1
-            let! sort = parseSort
-            do! chr ')'
+            let! symbol = chr_ws '(' >>. skipString "declare-fun" >>. spaces1 >>. parseSymbol
+            let! sorts = spaces1 >>. chr_ws '(' >>. sepEndBy parseSort spaces1 .>> ws_chr ')'
+            let! sort = spaces1 >>. parseSort .>> ws_chr ')'
             return DeclareFun(symbol, sorts, sort)
     })
     <|> attempt (parse {
-            do! chr '('
-            do! skipString "define-fun"
-            do! spaces1
-            let! symbol = parseSymbol
-            do! spaces1
-            do! chr '('
-            let! sortedVars = sepBy parseSortedVar spaces1
-            do! chr ')'
-            do! spaces1
-            let! sort = parseSort
-            do! spaces1
-            let! term = parseTerm
-            do! chr ')'
+            let! symbol = chr_ws '(' >>. skipString "define-fun" >>. spaces1 >>. parseSymbol
+            let! sortedVars = spaces1 >>. chr_ws '(' >>. sepEndBy parseSortedVar spaces1 .>>  ws_chr ')'
+            let! sort = spaces1 >>. parseSort
+            let! term = spaces1 >>. parseTerm .>> ws_chr ')'
             return DefineFun(symbol, sortedVars, sort, term)
     })
-    <|> attempt (parse {
-            do! chr '('
-            do! skipString "push"
-            do! spaces1
-            let! num = parseNumber
-            do! chr ')'
-            match num with
-            | Numeral i -> return Push i
-            | _ -> failwith "parseCommand: wrong numeral format"
-    })
-    <|> attempt (parse {
-            do! chr '('
-            do! skipString "pop"
-            do! spaces1
-            let! num = parseNumber
-            do! chr ')'
-            match num with
-            | Numeral i -> return Pop i
-            | _ -> failwith "parseCommand: wrong numeral format"
-    })
-    <|> attempt (parse {
-            do! chr '('
-            do! skipString "assert"
-            do! spaces1
-            let! term = parseTerm
-            do! chr ')'
-            return Assert term
-    })
-    <|> attempt (parse {
-            do! chr '('
-            do! skipString "get-value"
-            do! spaces1
-            do! chr '('
-            let! terms = sepBy parseTerm spaces1
-            do! chr ')'
-            do! chr ')'
-            match terms with
-            | [] -> failwith "parseCommand: should have at least one term"
-            | _ -> return GetValue terms
-    })
-    <|> attempt (parse {
-            do! chr '('
-            do! skipString "get-option"
-            do! spaces1
-            let! keyword = parseKeyword
-            do! chr ')'
-            return GetOption keyword
-    })
     <|> parse {
-            do! chr '('
-            do! skipString "get-info"
-            do! spaces1
-            let! infoFlag = parseInfoFlag
-            do! chr ')'
-            return GetInfo infoFlag
+            let! s = chr_ws '(' >>. manyChars (digit <|> letter <|> symbol)
+            match s with
+            | "set-logic" -> let! symbol = spaces1 >>. parseSymbol .>> ws_chr ')'
+                             return SetLogic symbol
+            | "set-option" -> let! option = spaces1 >>. parseOption .>> ws_chr ')'
+                              return SetOption option
+            | "set-info" -> let! attr = spaces1 >>. parseAttribute .>> ws_chr ')'
+                            return SetInfo attr
+            | "push" -> let! n = spaces1 >>. parseNumber .>> ws_chr ')'
+                        match n with
+                        | Numeral i -> return Push i
+                        | _ -> failwith "parseCommand: wrong numeral format"
+            | "pop" ->  let! n = spaces1 >>. parseNumber .>> ws_chr ')'
+                        match n with
+                        | Numeral i -> return Pop i
+                        | _ -> failwith "parseCommand: wrong numeral format"
+            | "assert" ->  
+                        let! term = spaces1 >>. parseTerm .>> ws_chr ')'
+                        return Assert term
+            | "get-value" ->  
+                        let! terms = spaces1 >>. sepEndBy1 parseTerm spaces1 .>> ws_chr ')'
+                        return GetValue terms
+            | "get-option" ->  
+                        let! keyword = spaces1 >>. parseKeyword .>> ws_chr ')'
+                        return GetOption keyword
+            | "get-info" ->  
+                        let! infoFlag = spaces1 >>. parseInfoFlag .>> ws_chr ')'
+                        return GetInfo infoFlag
+            | _ -> failwith <| sprintf "parseCommand: not an unary command of %s" s
     }
 
-let parse = sepBy parseCommand (newline <|> pComment) .>> eof
+let parse = sepEndBy parseCommand (newline <|> pComment) .>> eof

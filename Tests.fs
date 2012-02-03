@@ -38,10 +38,14 @@ let testNullaryCommand() =
 [<Fact>]
 let testSetLogic() =
     let tests = 
+        [ "( set-logic QF_LIA )";
+          "(set-logic UFLRA )";
+        ]
+    let expecteds = 
         [ "(set-logic QF_LIA)";
           "(set-logic UFLRA)";
         ]
-    testParseCommand tests tests
+    testParseCommand tests expecteds
 
 [<Fact>]
 let testSetOption() =
