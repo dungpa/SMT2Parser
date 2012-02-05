@@ -54,7 +54,7 @@ with override av.ToString() =
         match av with
         | AttrConst sc -> string sc
         | AttrSym sb -> string sb
-        | AttrSexp ss -> sprintf "(%s)" (lst2Str ss)
+        | AttrSexp ss -> sprintf "%s" (lst2Str ss)
             
 type Attribute = 
     | Attr of Keyword

@@ -6,7 +6,7 @@
 - A lot of duplication should be removed.
 - Handling numbers are not elegant.
 
-2012.01.30:
+2012.01.31:
 - Have some trouble of parsing Sexpressions based on whitespaces.
 - Need to understand how to use attempt
 
@@ -27,3 +27,9 @@
 
 2012.02.03:
 - Replaced sepEndBy by sepEndBy1 in appropriate cases.
+
+2012.02.05:
+- Should review the role of spaces1.
+- Need careful testing the structure of ASTs.
+- Should run the parser on real-world examples.
+- Reference other big projects to get new ideas.

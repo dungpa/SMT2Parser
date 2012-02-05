@@ -15,7 +15,7 @@ let execute p str =
     | Failure(errorMsg, _, _) -> failwith <| sprintf "Failure: %s from \"%s\"" errorMsg str
 
 let testParseCommand tests expecteds =
-    List.iter2 (fun test expected -> let result = test |> execute parseCommand |> string
+    List.iter2 (fun test expected -> let result = test |> execute command |> string
                                      Assert.Equal<string>(expected, result)) tests expecteds
 
 let testParse tests expecteds =
@@ -61,7 +61,8 @@ let testSetOption() =
           "(set-option :diagnostic-output-channel \"not ok\")";
           "(set-option :random-seed 10)";
           "(set-option :verbosity 0)";
-           // test <attribute> option
+          "(set-option :my_attribute (humpty dumpty))"; // test <attribute> option
+          "(set-option :status unsat)"; 
         ]
     testParseCommand tests tests
 
@@ -86,13 +87,20 @@ let testDeclareSort() =
 [<Fact>]
 let testDefineSort() =
     let tests = 
+        [ "(define-sort A() (Array Int Int Int))";
+          "(define-sort Set(T) (Array T Bool))";
+          "(define-sort IList () (List Int))";
+          "(define-sort List-Set (T) (Array (List T) Bool))";
+          "(define-sort I () Int)";
+        ]
+    let expecteds = 
         [ "(define-sort A () (Array Int Int Int))";
           "(define-sort Set (T) (Array T Bool))";
           "(define-sort IList () (List Int))";
           "(define-sort List-Set (T) (Array (List T) Bool))";
           "(define-sort I () Int)";
         ]
-    testParseCommand tests tests
+    testParseCommand tests expecteds
 
 [<Fact>]
 let testDeclareFun() =
