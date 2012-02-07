@@ -84,3 +84,4 @@ let testAll p xs =
 "(push 1)";
 ]
 |> testAll boolean;;
+    

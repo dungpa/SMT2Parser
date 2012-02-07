@@ -33,3 +33,10 @@
 - Need careful testing the structure of ASTs.
 - Should run the parser on real-world examples.
 - Reference other big projects to get new ideas.
+
+2012.05.07:
+- Investigate operator precedences and chances to apply them.
+- Think of changing int32 to bigint to avoid stackoverflow.
+- May add labels to have more indicative error messages.
+- Handling whitespaces is complete.
+- Need to investigate corner cases.

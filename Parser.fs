@@ -1,6 +1,8 @@
 ﻿module SMT2.Parser
 
+open System
 open System.Collections.Generic
+
 open FParsec
 open FParsec.Primitives 
 open FParsec.CharParsers 
@@ -11,14 +13,11 @@ open SMT2.Ast
 type SMT2Parser<'a> = Parser<'a, unit> 
 
 let SYMBOLS = ".!$%&|*+-/:<=>?@^_~#"
-let psymbol: SMT2Parser<char> = anyOf SYMBOLS
+let isSymbol (c: char) = SYMBOLS.Contains(string c)
 
 let chr = skipChar
 let chr_ws c = skipChar c .>> spaces
 let ws_chr c = spaces >>. skipChar c
-let ws_chr_ws c = spaces >>. skipChar c .>> spaces
-
-let isSymbol (c: char) = SYMBOLS.Contains(string c)
 
 let str s = skipString s
 let str_ws s = skipString s .>> spaces
@@ -41,33 +40,34 @@ let resultSatisfies predicate msg (p: Parser<_,_>) : Parser<_,_> =
 // Currently not keep information about comments
 let comment = spaces >>. chr ';' .>> skipRestOfLine true
 
-// Numeral | Decimal | Hexadecimal | Binary
-let numberFormat = NumberLiteralOptions.AllowFraction
-                   ||| NumberLiteralOptions.AllowHexadecimal
-                   ||| NumberLiteralOptions.AllowBinary
+// Doesn't check for integer overflow.
+let pnumeral = many1Chars digit |>> Convert.ToInt32
 
-let pNumber = 
-    numberLiteral numberFormat "number"
-    |>> fun num -> if num.IsHexadecimal then Hexadecimal (int num.String)
-                   elif num.IsBinary then Binary (int num.String)
-                   elif num.IsInteger then Numeral (int num.String) // why does this match everything?
-                   else Decimal (float num.String)
+let numeral = pnumeral |>> Numeral
 
-// Undesirable approach
+let decimal = 
+    (many1Chars digit .>> chr '.') .>>. (many1Chars digit)
+    |>> (fun (s1, s2) -> sprintf "%s.%s" s1 s2 |> Convert.ToDouble |> Decimal)
+
+let hexadecimal =
+    str "#x" >>. many1Satisfy isHex
+    |>> (fun hexStr -> Convert.ToInt32(hexStr, 16) |> Hexadecimal)
+
+let binary =
+    str "#b" >>. many1Satisfy (fun c -> c = '0' || c = '1')
+    |>> (fun binStr -> Convert.ToInt32(binStr, 2) |> Binary)
+
 let number =  
-    let isNextDigit c = isDigit c || c = '.'
-    let numOrDec = many1Satisfy2 isDigit isNextDigit 
-    let hexOrBin = chr '#' >>. manyChars (letter <|> digit) |>> fun s -> sprintf "0%s" s
-    parse {
-            let! s = spaces >>. numOrDec <|> hexOrBin
-            match run pNumber <| s with
-            | Success(result, _, _)   -> return result
-            | Failure(_, _, _) -> ()
-    }
+    choice [
+            hexadecimal; binary;
+            attempt decimal; // if not decimal, could be numeral
+            numeral;
+            ]
 
 // This method cause a lot of confusion
+// Need to consider nested strings
 let pStringLiteral = 
-    spaces >>. (betweenStrings "\"" "\"" <| manyChars (noneOf "\""))
+    spaces >>. betweenStrings "\"" "\"" (manyChars (noneOf "\""))
 
 let stringLiteral = pStringLiteral |>> String
 
@@ -79,13 +79,12 @@ let reservedWords = set [
                          ]
 
 let pSymbol =
-    attempt (betweenStrings "|" "|" (manyChars (noneOf "|")))
+    betweenStrings "|" "|" (manyChars (noneOf "|"))
     <|> (many1Satisfy2 (fun c -> isLetter c || isSymbol c) (fun c -> isDigit c || isLetter c || isSymbol c)
          |> resultSatisfies (not << reservedWords.Contains) "Should not be a reserved word")
     
 let symbol = pSymbol |>> Symbol
 
-// TODO: process keywords
 let pKeyword = 
     many1Satisfy2 (fun c -> c = ':') (fun c -> isDigit c || isLetter c || isSymbol c)
 
@@ -100,24 +99,24 @@ let sexpList = sepEndBy sexpr spaces1
 // A SMTParser<_> can be one of the below
 // TODO: note that the definition for list need to backtrack to disambinguate the two cases 
 do sexprRef := choice [
-                        sconst |>> Const;
+                        attempt sconst |>> Const; // if not sconst, could be symbol                        
                         keyword |>> Kw;
-                        chr_ws '(' >>. sexpList .>> ws_chr ')' |>> List;
                         symbol |>> Sb;
+                        chr_ws '(' >>. sexpList .>> ws_chr ')' |>> List;                        
                         ]
 
-// Change numeral to pint32        
+// Change numeral to pnumeral        
 let indexedId = 
-    (chr_ws '(' >>. chr '_' >>. spaces1 >>. symbol) .>>. (spaces1 >>. sepEndBy1 pint32 spaces1 .>> ws_chr ')')
+    (chr_ws '(' >>. chr '_' >>. spaces1 >>. symbol) .>>. (spaces1 >>. sepEndBy1 pnumeral spaces1 .>> ws_chr ')')
     |>> IndexedId
 
 let identifier = 
-    attempt (symbol |>> Id)
+    symbol |>> Id 
     <|> indexedId
 
 let attrVal =
     choice [
-            sconst |>> AttrConst;
+            attempt sconst |>> AttrConst;
             symbol |>> AttrSym;
             sexpList |>> AttrSexp;
             ]
@@ -126,26 +125,26 @@ let compAttr =
     keyword .>>. (spaces1 >>. attrVal)
     |>> CompAttr
 
-let attribute: SMT2Parser<_> =    
+let attribute =    
     compAttr <|> (keyword |>> Attr)
 
 let sort, sortRef: SMT2Parser<_> * SMT2Parser<_> ref = createParserForwardedToRef() 
  
-let pSortList1: SMT2Parser<_> = sepEndBy1 sort spaces1
+let pSortList1 = sepEndBy1 sort spaces1
 
 let compSort = 
     (chr_ws '(' >>. identifier) .>>. (spaces1 >>. pSortList1 .>> ws_chr ')')
     |>> CompSort
 
-do sortRef :=  attempt (identifier |>> Sort)
+do sortRef :=  attempt identifier |>> Sort 
                <|> compSort 
 
 let compQualIdent =
-    (chr_ws '(' >>. str "as" >>. spaces1 >>. identifier) .>>. (spaces1 >>. sort .>> ws_chr ')')
+    (chr_ws '(' >>? str "as" >>. spaces1 >>. identifier) .>>. (spaces1 >>. sort .>> ws_chr ')')
     |>> CompQualIdent
 
 let qualIdent =    
-    attempt (identifier |>> QualIdent)
+    identifier |>> QualIdent 
     <|> compQualIdent
 
 let sortedVar = 
@@ -154,7 +153,7 @@ let sortedVar =
 
 let term, termRef: SMT2Parser<_> * SMT2Parser<_> ref = createParserForwardedToRef() 
  
-let pTermList1: SMT2Parser<_> = sepEndBy1 term spaces1
+let pTermList1 = sepEndBy1 term spaces1
 
 let varBinding = 
     (chr_ws '(' >>. symbol)
@@ -183,7 +182,7 @@ let compQualTerm =
     
 // Need to control backtracking smarter
 do termRef :=  choice [
-                        attempt sconst |>> ConstTerm;
+                        attempt sconst |>> ConstTerm; // if not ConstTerm, could be QualTerm
                         attempt qualIdent |>> QualTerm;
                         compQualTerm;
                         ``let``;
@@ -217,15 +216,15 @@ let stringConfig =
 
 let numeralConfig =
     choice [ 
-            str_ws ":random-seed" >>. pint32 |>> (fun i -> NumeralConfig(NCT.``:random-seed``, i));
-            str_ws ":verbosity" >>. pint32 |>> (fun i -> NumeralConfig(NCT.``:verbosity``, i));
+            str_ws ":random-seed" >>. pnumeral |>> (fun i -> NumeralConfig(NCT.``:random-seed``, i));
+            str_ws ":verbosity" >>. pnumeral |>> (fun i -> NumeralConfig(NCT.``:verbosity``, i));
             ]
 
 let option = 
     choice [
-            attempt boolConfig;
-            attempt stringConfig;
-            attempt numeralConfig;
+            boolConfig;
+            stringConfig;
+            numeralConfig;
             attribute |>> AttrOption;
         ]
 
@@ -242,7 +241,7 @@ let infoFlag =
 
 let declareSort =
     tuple2 (chr_ws '(' >>? str "declare-sort" >>. spaces1 >>. symbol)
-           (spaces1 >>. pint32 .>>  ws_chr ')')
+           (spaces1 >>. pnumeral .>>  ws_chr ')')
     |>> DeclareSort
 
 let defineSort =
@@ -276,10 +275,10 @@ let command =
             chr_ws '(' >>? str "set-logic" .>> spaces1 >>. symbol .>> ws_chr ')' |>> SetLogic;
             chr_ws '(' >>? str "set-option" .>> spaces1 >>. option .>> ws_chr ')' |>> SetOption;
             chr_ws '(' >>? str "set-info" .>> spaces1 >>. attribute .>> ws_chr ')' |>> SetInfo;
-            chr_ws '(' >>? str "push" .>> spaces1 >>. pint32 .>> ws_chr ')' |>> Push;
-            chr_ws '(' >>? str "pop" .>> spaces1 >>. pint32 .>> ws_chr ')' |>> Pop;
+            chr_ws '(' >>? str "push" .>> spaces1 >>. pnumeral .>> ws_chr ')' |>> Push;
+            chr_ws '(' >>? str "pop" .>> spaces1 >>. pnumeral .>> ws_chr ')' |>> Pop;
             chr_ws '(' >>? str "assert" .>> spaces1 >>. term .>> ws_chr ')' |>> Assert;
-            chr_ws '(' >>? str "get-value" .>> spaces1 >>. chr_ws '(' >>. sepEndBy1 term spaces1 .>> ws_chr ')' .>> ws_chr ')' |>> GetValue;
+            chr_ws '(' >>? str "get-value" .>> spaces >>. chr_ws '(' >>. sepEndBy1 term spaces1 .>> ws_chr ')' .>> ws_chr ')' |>> GetValue;
             chr_ws '(' >>? str "get-option" .>> spaces1 >>. keyword .>> ws_chr ')' |>> GetOption;
             chr_ws '(' >>? str "get-info" .>> spaces1 >>. infoFlag .>> ws_chr ')' |>> GetInfo;
 
