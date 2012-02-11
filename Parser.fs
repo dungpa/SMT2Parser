@@ -1,4 +1,4 @@
-﻿module SMT2.Parser
+﻿module SMT2Parser.Parser
 
 open System
 open System.Collections.Generic
@@ -7,12 +7,12 @@ open FParsec
 open FParsec.Primitives 
 open FParsec.CharParsers 
  
-open SMT2.Ast
+open SMT2Parser.Ast
 
 // Utility functions
 type SMT2Parser<'a> = Parser<'a, unit> 
 
-let SYMBOLS = ".!$%&|*+-/:<=>?@^_~#"
+let SYMBOLS = "~!@$%^&*_-+=<>.?/"
 let isSymbol (c: char) = SYMBOLS.Contains(string c)
 
 let chr = skipChar
@@ -25,7 +25,7 @@ let ws_str s = spaces >>. skipString s
 
 let betweenStrings s1 s2 p = str s1 >>. p .>> str s2
 
-let resultSatisfies predicate msg (p: Parser<_,_>) : Parser<_,_> =
+let resultSatisfies predicate msg (p: SMT2Parser<_>): SMT2Parser<_> =
     let error = messageError msg
     fun stream ->
       let state = stream.State
@@ -43,11 +43,11 @@ let comment = spaces >>. chr ';' .>> skipRestOfLine true
 // Doesn't check for integer overflow.
 let pnumeral = many1Chars digit |>> Convert.ToInt32
 
-let numeral = pnumeral |>> Numeral
-
-let decimal = 
-    (many1Chars digit .>> chr '.') .>>. (many1Chars digit)
-    |>> (fun (s1, s2) -> sprintf "%s.%s" s1 s2 |> Convert.ToDouble |> Decimal)
+let numeralOrdecimal = 
+    pipe2 (many1Satisfy isDigit) (chr '.' >>. many1Satisfy isDigit |> opt)
+          (fun s1 optS2 -> match optS2 with
+                           | Some s2 -> sprintf "%s.%s" s1 s2 |> Convert.ToDouble |> Decimal
+                           | None -> s1 |> Convert.ToInt32 |> Numeral)
 
 let hexadecimal =
     str "#x" >>. many1Satisfy isHex
@@ -58,20 +58,24 @@ let binary =
     |>> (fun binStr -> Convert.ToInt32(binStr, 2) |> Binary)
 
 let number =  
-    choice [
-            hexadecimal; binary;
-            attempt decimal; // if not decimal, could be numeral
-            numeral;
+    choiceL [
+             hexadecimal; 
+             binary;
+             numeralOrdecimal; // if not decimal, could be numeral
             ]
+            "number literal"
 
-// This method cause a lot of confusion
-// Need to consider nested strings
 let pStringLiteral = 
-    spaces >>. betweenStrings "\"" "\"" (manyChars (noneOf "\""))
+    spaces >>. betweenStrings "\"" "\"" (manySatisfy ((<>) '"'))
 
 let stringLiteral = pStringLiteral |>> String
 
-let sconst = number <|> stringLiteral    
+let sconst = 
+    choiceL [
+             number; 
+             stringLiteral 
+            ]
+            "sconstant"   
 
 let reservedWords = set [
                          "par"; "NUMERAL"; "DECIMAL"; "STRING"; 
@@ -79,7 +83,7 @@ let reservedWords = set [
                          ]
 
 let pSymbol =
-    betweenStrings "|" "|" (manyChars (noneOf "|"))
+    betweenStrings "|" "|" (manySatisfy ((<>) '|'))
     <|> (many1Satisfy2 (fun c -> isLetter c || isSymbol c) (fun c -> isDigit c || isLetter c || isSymbol c)
          |> resultSatisfies (not << reservedWords.Contains) "Should not be a reserved word")
     
@@ -91,44 +95,46 @@ let pKeyword =
 let keyword = pKeyword |>> Keyword
 
 // You need to refer to sexpr from the productions below, hence the forward declaration trick 
-let sexpr, sexprRef: SMT2Parser<_> * SMT2Parser<_> ref = createParserForwardedToRef() 
+let sexpr, sexprRef = createParserForwardedToRef() 
  
 // Just expressions separated by one or more spaces 
 let sexpList = sepEndBy sexpr spaces1
 
-// A SMTParser<_> can be one of the below
-// TODO: note that the definition for list need to backtrack to disambinguate the two cases 
-do sexprRef := choice [
-                        attempt sconst |>> Const; // if not sconst, could be symbol                        
+do sexprRef := choiceL [
+                        sconst |>> Const;                      
                         keyword |>> Kw;
                         symbol |>> Sb;
                         chr_ws '(' >>. sexpList .>> ws_chr ')' |>> List;                        
                         ]
+                        "sexpression"
 
-// Change numeral to pnumeral        
+// Changed numeral to pnumeral        
 let indexedId = 
     (chr_ws '(' >>. chr '_' >>. spaces1 >>. symbol) .>>. (spaces1 >>. sepEndBy1 pnumeral spaces1 .>> ws_chr ')')
     |>> IndexedId
 
 let identifier = 
-    symbol |>> Id 
-    <|> indexedId
+    choiceL [
+             symbol |>> Id;
+             indexedId;
+            ]
+            "identifier"
 
 let attrVal =
-    choice [
-            attempt sconst |>> AttrConst;
+    choiceL [
+            sconst |>> AttrConst;
             symbol |>> AttrSym;
             sexpList |>> AttrSexp;
             ]
-
-let compAttr =
-    keyword .>>. (spaces1 >>. attrVal)
-    |>> CompAttr
+            "attribute value"
 
 let attribute =    
-    compAttr <|> (keyword |>> Attr)
+    pipe2 keyword (spaces1 >>. attrVal |> opt)
+          (fun k optAv -> match optAv with
+                          | Some av -> CompAttr(k, av)  
+                          | None -> Attr k)
 
-let sort, sortRef: SMT2Parser<_> * SMT2Parser<_> ref = createParserForwardedToRef() 
+let sort, sortRef = createParserForwardedToRef() 
  
 let pSortList1 = sepEndBy1 sort spaces1
 
@@ -136,16 +142,22 @@ let compSort =
     (chr_ws '(' >>. identifier) .>>. (spaces1 >>. pSortList1 .>> ws_chr ')')
     |>> CompSort
 
-do sortRef :=  attempt identifier |>> Sort 
-               <|> compSort 
+do sortRef :=  choiceL [
+                        attempt identifier |>> Sort; 
+                        compSort; // The order shouldn't matter
+                        ]
+                       "sort" 
 
 let compQualIdent =
-    (chr_ws '(' >>? str "as" >>. spaces1 >>. identifier) .>>. (spaces1 >>. sort .>> ws_chr ')')
+    (chr_ws '(' >>. str "as" >>. spaces1 >>. identifier) .>>. (spaces1 >>. sort .>> ws_chr ')')
     |>> CompQualIdent
 
-let qualIdent =    
-    identifier |>> QualIdent 
-    <|> compQualIdent
+let qualIdent = 
+    choiceL [   
+             identifier |>> QualIdent;
+             compQualIdent;
+             ]
+            "qualified identifier"
 
 let sortedVar = 
     (chr_ws '(' >>. symbol) .>>. (spaces1 >>. sort .>> ws_chr ')')
@@ -181,15 +193,16 @@ let compQualTerm =
     |>> CompQualTerm
     
 // Need to control backtracking smarter
-do termRef :=  choice [
-                        attempt sconst |>> ConstTerm; // if not ConstTerm, could be QualTerm
-                        attempt qualIdent |>> QualTerm;
+do termRef :=  choiceL [
+                        sconst |>> ConstTerm;
+                        attempt qualIdent |>> QualTerm; // if not QualTerm, could be compQualTerm 
                         compQualTerm;
                         ``let``;
                         bang;
                         forall;
                         exists;
-                    ]
+                        ]
+                       "term"
                     
 // NB: currently not support Theory Declarations
 
@@ -221,12 +234,13 @@ let numeralConfig =
             ]
 
 let option = 
-    choice [
-            boolConfig;
-            stringConfig;
-            numeralConfig;
-            attribute |>> AttrOption;
-        ]
+    choiceL [
+             boolConfig;
+             stringConfig;
+             numeralConfig;
+             attribute |>> AttrOption;
+            ]
+            "option"
 
 let infoFlag = 
     pKeyword |>> function
@@ -264,28 +278,44 @@ let defineFun =
     |>> DefineFun
 
 let command = 
-    choice [
-            chr_ws '(' >>? str "check-sat" .>> ws_chr ')' |>> (fun _ -> CheckSat);
-            chr_ws '(' >>? str "get-assertions" .>> ws_chr ')' |>> (fun _ -> GetAssertions);
-            chr_ws '(' >>? str "get-proof" .>> ws_chr ')' |>> (fun _ -> GetProof);
-            chr_ws '(' >>? str "get-unsat-core" .>> ws_chr ')' |>> (fun _ -> GetUnsatCore);
-            chr_ws '(' >>? str "get-assignment" .>> ws_chr ')' |>> (fun _ -> GetAssignment);
-            chr_ws '(' >>? str "exit" .>> ws_chr ')' |>> (fun _ -> Exit);
+    choiceL [
+             chr_ws '(' >>? str "check-sat" .>> ws_chr ')' |>> (fun _ -> CheckSat);
+             chr_ws '(' >>? str "get-assertions" .>> ws_chr ')' |>> (fun _ -> GetAssertions);
+             chr_ws '(' >>? str "get-proof" .>> ws_chr ')' |>> (fun _ -> GetProof);
+             chr_ws '(' >>? str "get-unsat-core" .>> ws_chr ')' |>> (fun _ -> GetUnsatCore);
+             chr_ws '(' >>? str "get-assignment" .>> ws_chr ')' |>> (fun _ -> GetAssignment);
+             chr_ws '(' >>? str "exit" .>> ws_chr ')' |>> (fun _ -> Exit);
 
-            chr_ws '(' >>? str "set-logic" .>> spaces1 >>. symbol .>> ws_chr ')' |>> SetLogic;
-            chr_ws '(' >>? str "set-option" .>> spaces1 >>. option .>> ws_chr ')' |>> SetOption;
-            chr_ws '(' >>? str "set-info" .>> spaces1 >>. attribute .>> ws_chr ')' |>> SetInfo;
-            chr_ws '(' >>? str "push" .>> spaces1 >>. pnumeral .>> ws_chr ')' |>> Push;
-            chr_ws '(' >>? str "pop" .>> spaces1 >>. pnumeral .>> ws_chr ')' |>> Pop;
-            chr_ws '(' >>? str "assert" .>> spaces1 >>. term .>> ws_chr ')' |>> Assert;
-            chr_ws '(' >>? str "get-value" .>> spaces >>. chr_ws '(' >>. sepEndBy1 term spaces1 .>> ws_chr ')' .>> ws_chr ')' |>> GetValue;
-            chr_ws '(' >>? str "get-option" .>> spaces1 >>. keyword .>> ws_chr ')' |>> GetOption;
-            chr_ws '(' >>? str "get-info" .>> spaces1 >>. infoFlag .>> ws_chr ')' |>> GetInfo;
+             chr_ws '(' >>? str "set-logic" .>> spaces1 >>. symbol .>> ws_chr ')' |>> SetLogic;
+             chr_ws '(' >>? str "set-option" .>> spaces1 >>. option .>> ws_chr ')' |>> SetOption;
+             chr_ws '(' >>? str "set-info" .>> spaces1 >>. attribute .>> ws_chr ')' |>> SetInfo;
+             chr_ws '(' >>? str "push" .>> spaces1 >>. pnumeral .>> ws_chr ')' |>> Push;
+             chr_ws '(' >>? str "pop" .>> spaces1 >>. pnumeral .>> ws_chr ')' |>> Pop;
+             chr_ws '(' >>? str "assert" .>> spaces1 >>. term .>> ws_chr ')' |>> Assert;
+             chr_ws '(' >>? str "get-value" .>> spaces >>. chr_ws '(' >>. sepEndBy1 term spaces1 .>> ws_chr ')' .>> ws_chr ')' |>> GetValue;
+             chr_ws '(' >>? str "get-option" .>> spaces1 >>. keyword .>> ws_chr ')' |>> GetOption;
+             chr_ws '(' >>? str "get-info" .>> spaces1 >>. infoFlag .>> ws_chr ')' |>> GetInfo;
 
-            declareSort;
-            defineSort;
-            declareFun;
-            defineFun;
-    ]
+             declareSort;
+             defineSort;
+             declareFun;
+             defineFun;
+            ]
+            "command"
 
-let parse = sepEndBy command (skipSepBy spaces comment) .>> eof
+let script = sepEndBy command (skipSepBy spaces comment) .>> eof
+
+let parseCommand str = 
+    match run command str with
+    | Success(result, _, _)   -> result
+    | Failure(errorMsg, _, _) -> failwith <| sprintf "Failure: %s from \"%s\"" errorMsg str
+
+let parse str = 
+    match run script str with
+    | Success(result, _, _)   -> result
+    | Failure(errorMsg, _, _) -> failwith <| sprintf "Failure: %s from \"%s\"" errorMsg str
+
+let parseFile path = 
+    match runParserOnFile script () path System.Text.Encoding.UTF8  with
+    | Success(result, _, _)   -> result
+    | Failure(errorMsg, _, _) -> failwith <| sprintf "Failure: %s from file \"%s\"" errorMsg path

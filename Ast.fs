@@ -1,4 +1,4 @@
-﻿module SMT2.Ast
+﻿module SMT2Parser.Ast
 
 let inline lst2Str xs = xs |> List.map string |> String.concat " "
 

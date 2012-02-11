@@ -4,23 +4,16 @@ open System.IO
 
 open Xunit
 
-open FParsec
+open SMT2Parser.Ast
+open SMT2Parser.Parser
 
-open SMT2.Ast
-open SMT2.Parser
-
-let execute p str =
-    match run p str with
-    | Success(result, _, _)   -> result
-    | Failure(errorMsg, _, _) -> failwith <| sprintf "Failure: %s from \"%s\"" errorMsg str
-
-let testParseCommand tests expecteds =
-    List.iter2 (fun test expected -> let result = test |> execute command |> string
+let testCommand tests expecteds =
+    List.iter2 (fun test expected -> let result = test |> parseCommand |> string
                                      Assert.Equal<string>(expected, result)) tests expecteds
 
 let testParse tests expecteds =
-    let results = tests |> execute parse |> List.map string
-    let expectedResults = expecteds |> execute parse |> List.map string
+    let results = tests |> parse |> List.map string
+    let expectedResults = expecteds |> parse |> List.map string
     results |> List.iter2 (fun e r -> Assert.Equal<string>(e, r)) expectedResults
 
 [<Fact>]
@@ -33,7 +26,7 @@ let testNullaryCommand() =
           "(get-assignment)";
           "(exit)";
         ]
-    testParseCommand tests tests
+    testCommand tests tests
 
 [<Fact>]
 let testSetLogic() =
@@ -45,7 +38,7 @@ let testSetLogic() =
         [ "(set-logic QF_LIA)";
           "(set-logic UFLRA)";
         ]
-    testParseCommand tests expecteds
+    testCommand tests expecteds
 
 [<Fact>]
 let testSetOption() =
@@ -64,7 +57,7 @@ let testSetOption() =
           "(set-option :my_attribute (humpty dumpty))"; // test <attribute> option
           "(set-option :status unsat)"; 
         ]
-    testParseCommand tests tests
+    testCommand tests tests
 
 [<Fact>]
 let testSetInfo() =
@@ -73,7 +66,7 @@ let testSetInfo() =
           "(set-info :category \"industrial\")";
           "(set-info :status unsat)";
         ]
-    testParseCommand tests tests
+    testCommand tests tests
 
 [<Fact>]
 let testDeclareSort() =
@@ -82,7 +75,7 @@ let testDeclareSort() =
           "(declare-sort A 2)";
           "(declare-sort B 0)";
         ]
-    testParseCommand tests tests
+    testCommand tests tests
 
 [<Fact>]
 let testDefineSort() =
@@ -100,7 +93,7 @@ let testDefineSort() =
           "(define-sort List-Set (T) (Array (List T) Bool))";
           "(define-sort I () Int)";
         ]
-    testParseCommand tests expecteds
+    testCommand tests expecteds
 
 [<Fact>]
 let testDeclareFun() =
@@ -110,7 +103,7 @@ let testDeclareFun() =
           "(declare-fun divide (Real Real) Real)";
           "(declare-fun inv ((Array Int (Array Int Real))) (Array Int (Array Int Real)))";
         ]
-    testParseCommand tests tests
+    testCommand tests tests
 
 [<Fact>]
 let testDefineFun() =
@@ -118,9 +111,8 @@ let testDefineFun() =
         [ "(define-fun conjecture () Bool (=> (and (=> p q) (=> q r)) (=> p r)))";
           "(define-fun demorgan () Bool (= (and a b) (not (or (not a) (not b)))))";
           "(define-fun mydiv ((x Real) (y Real)) Real (if (not (= y 0.0)) (/ x y) 0.0))";
-          // "(define-fun bag-union ((x A) (y A)) A ((_ map (+ (Int Int) Int)) x y))"; // a difficult case
         ]
-    testParseCommand tests tests
+    testCommand tests tests
 
 [<Fact>]
 let testPushPop() =
@@ -128,7 +120,7 @@ let testPushPop() =
         [ "(push 1)";
           "(pop 2)";
         ]
-    testParseCommand tests tests
+    testCommand tests tests
 
 [<Fact>]
 let testAssert() =
@@ -136,7 +128,7 @@ let testAssert() =
         [ "(assert x)";
           "(assert (= y 0))";
         ]
-    testParseCommand tests tests
+    testCommand tests tests
 
 [<Fact>]
 let testGetValue() =
@@ -144,16 +136,15 @@ let testGetValue() =
         [ "(get-value (x))";
           "(get-value (+ y z))";
         ]
-    testParseCommand tests tests
+    testCommand tests tests
 
 [<Fact>]
 let testGetOption() =
     let tests = 
         [ "(get-option :print-success)";
           "(get-option :expand-definitions)";
-          // test <attribute> option
         ]
-    testParseCommand tests tests
+    testCommand tests tests
 
 [<Fact>]
 let testGetInfo() =
@@ -164,12 +155,11 @@ let testGetInfo() =
           "(get-info :version)"
           "(get-info :status)";
           "(get-info :reason-unknown)";
-          //"(get-info :my_attribute (humpty dumpty))"; // test <keyword> flag
+          "(get-info :my_attribute)"; // test <keyword> flag
         ]
-    testParseCommand tests tests
+    testCommand tests tests
 
 // Following tests are extracted from Z3's guide at http://rise4fun.com/z3/tutorial/guide
-
 [<Fact>]
 let fileTestBasic() =
     let s = File.ReadAllText "..\\..\\tests\\test01.smt2"
@@ -209,6 +199,7 @@ let fileTestBitvec() =
 let fileTestQuantifier() =    
     let s = File.ReadAllText "..\\..\\tests\\test08.smt2"
     testParse s s
+
 [<Fact>]
 let fileTestPattern() =    
     let s = File.ReadAllText "..\\..\\tests\\test09.smt2"

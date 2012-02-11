@@ -4,7 +4,7 @@
 - Need a lot of test cases to test parsing.
 - AST should be revised.
 - A lot of duplication should be removed.
-- Handling numbers are not elegant.
+- Handling numbers is not elegant.
 
 2012.01.31:
 - Have some trouble of parsing Sexpressions based on whitespaces.
@@ -34,9 +34,14 @@
 - Should run the parser on real-world examples.
 - Reference other big projects to get new ideas.
 
-2012.05.07:
+2012.02.07:
 - Investigate operator precedences and chances to apply them.
 - Think of changing int32 to bigint to avoid stackoverflow.
 - May add labels to have more indicative error messages.
 - Handling whitespaces is complete.
 - Need to investigate corner cases.
+- Should add facade functions.
+
+2012.02.11:
+- Divide into 2 projects.
+- Using enums for easy deriving toString(), it may lead to problem when using ASTs.

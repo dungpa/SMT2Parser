@@ -5,7 +5,7 @@
 #load "Parser.fs"
 
 open FParsec
-open SMT2.Parser
+open SMT2Parser.Parser
 
 let test p str =
     match run p str with
@@ -79,9 +79,7 @@ let testAll p xs =
 |> testAll command;;
 
 [
-" true";
-" false";
-"(push 1)";
+"true";
+"false";
 ]
 |> testAll boolean;;
-    
