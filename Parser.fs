@@ -1,7 +1,9 @@
 ﻿module SMT2Parser.Parser
 
 open System
+open System.Numerics
 open System.Collections.Generic
+open System.Globalization
 
 open FParsec
 open FParsec.Primitives 
@@ -41,21 +43,26 @@ let resultSatisfies predicate msg (p: SMT2Parser<_>): SMT2Parser<_> =
 let comment = spaces >>. chr ';' .>> skipRestOfLine true
 
 // Doesn't check for integer overflow.
-let pnumeral = many1Chars digit |>> Convert.ToInt32
+let pnumeral = many1Satisfy isDigit |>> bigint.Parse
 
 let numeralOrdecimal = 
     pipe2 (many1Satisfy isDigit) (chr '.' >>. many1Satisfy isDigit |> opt)
           (fun s1 optS2 -> match optS2 with
-                           | Some s2 -> sprintf "%s.%s" s1 s2 |> Convert.ToDouble |> Decimal
-                           | None -> s1 |> Convert.ToInt32 |> Numeral)
+                           | Some s2 -> sprintf "%s.%s" s1 s2 |> Convert.ToDecimal |> Decimal
+                           | None -> s1 |> bigint.Parse |> Numeral)
 
 let hexadecimal =
     str "#x" >>. many1Satisfy isHex
-    |>> (fun hexStr -> Convert.ToInt32(hexStr, 16) |> Hexadecimal)
+    |>> (fun hexStr -> BigInteger.Parse(hexStr, NumberStyles.AllowHexSpecifier) |> Hexadecimal)
 
 let binary =
     str "#b" >>. many1Satisfy (fun c -> c = '0' || c = '1')
-    |>> (fun binStr -> Convert.ToInt32(binStr, 2) |> Binary)
+    |>> (fun binStr -> let s = (new String('0', 8-binStr.Length%8)) + binStr
+                       let nBytes = s.Length/8
+                       Array.init nBytes (fun i -> i+1) 
+                       |> Array.map (fun i -> Convert.ToByte(s.Substring(8*i, 8), 2))
+                       |> fun bs -> bigint(bs)
+                       |> Binary)
 
 let number =  
     choiceL [

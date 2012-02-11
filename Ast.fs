@@ -1,18 +1,20 @@
 ﻿module SMT2Parser.Ast
 
-let inline lst2Str xs = xs |> List.map string |> String.concat " "
+open System
 
-type Num = int
+let inline lst2Str (xs: _ list) = String.Join(" ", xs |> List.map string)
+
+type Num = bigint
 
 type Sconstant =
     | Numeral of Num
-    | Decimal of float
+    | Decimal of decimal
     | Hexadecimal of Num
     | Binary of Num
     | String of string
 with override sc.ToString() =
         match sc with
-        | Numeral n | Hexadecimal n | Binary n -> sprintf "%i" n // May output to appropriate formats
+        | Numeral n | Hexadecimal n | Binary n -> sprintf "%A" n // May output to appropriate formats
         | Decimal f -> sprintf "%.1f" f        
         | String s -> sprintf "\"%s\"" s
     
@@ -134,7 +136,7 @@ with override o.ToString() =
         match o with
         | BoolConfig(bct, b) -> sprintf "%s %b" (string bct) b
         | StringConfig(sct, s) -> sprintf "%s \"%s\"" (string sct) s
-        | NumeralConfig(nct, n) -> sprintf "%s %i" (string nct) n
+        | NumeralConfig(nct, n) -> sprintf "%s %A" (string nct) n
         | AttrOption ao -> string ao
 
 type Flag = 
@@ -179,12 +181,12 @@ with override c.ToString() =
         | SetLogic s -> sprintf "(set-logic %s)" <| string s
         | SetOption o -> sprintf "(set-option %s)" <| string o
         | SetInfo i -> sprintf "(set-info %s)" <| string i
-        | DeclareSort(s, n) -> sprintf "(declare-sort %s %i)" (string s) n
+        | DeclareSort(s, n) -> sprintf "(declare-sort %s %A)" (string s) n
         | DefineSort(s1, ss, s2) -> sprintf "(define-sort %s (%s) %s)" (string s1) (lst2Str ss) (string s2)
         | DeclareFun(s1, ss, s2) -> sprintf "(declare-fun %s (%s) %s)" (string s1) (lst2Str ss) (string s2)
         | DefineFun(s1, svs, s2, t) -> sprintf "(define-fun %s (%s) %s %s)" (string s1) (lst2Str svs) (string s2) (string t)
-        | Push n -> sprintf "(push %i)" n
-        | Pop n -> sprintf "(pop %i)" n
+        | Push n -> sprintf "(push %A)" n
+        | Pop n -> sprintf "(pop %A)" n
         | Assert t -> sprintf "(assert %s)" <| string t
         | CheckSat -> "(check-sat)"
         | GetAssertions -> "(get-assertions)"

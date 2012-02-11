@@ -4,6 +4,7 @@
 #load "Ast.fs"
 #load "Parser.fs"
 
+open System.IO
 open FParsec
 open SMT2Parser.Parser
 
@@ -83,3 +84,6 @@ let testAll p xs =
 "false";
 ]
 |> testAll boolean;;
+
+let s = File.ReadAllText (__SOURCE_DIRECTORY__ + "\\tests\\test10.smt2")
+let ast = parseCommand s;;

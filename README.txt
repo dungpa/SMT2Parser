@@ -1,6 +1,6 @@
 ﻿2012.01.30:
 - First prototype
-- Currently use custom expression, should change to operators later.
+- Currently use parse expression, should change to operators later.
 - Need a lot of test cases to test parsing.
 - AST should be revised.
 - A lot of duplication should be removed.
@@ -21,7 +21,7 @@
 - Need a common function for parsing string without whitespace.
 - The official smt2 standard doesn't support declare-const, echo, display, simplify, help, get-model, declare-datatypes, eval.
 - Currently does not support comments (out of line and in line).
-- Need to find out how to treat (push) and (pop) convention of Z3.
+- Need to find out how to treat (push) and (pop) conventions of Z3.
 - Could mix between built-in flags and custom flags.
 - Currently does not support multiline commands.
 
@@ -44,4 +44,8 @@
 
 2012.02.11:
 - Divide into 2 projects.
-- Using enums for easy deriving toString(), it may lead to problem when using ASTs.
+- Using enums for convenient ToString() methods, it may lead to incomplete pattern matching when using ASTs.
+- Changed to use bigint.
+- Have a stack overflow due to deep nesting of let bindings.
+- Currently parse successfully around 3000 benchmarks.
+- Due to the huge size of benchmarks, they are not included in repo, download them at smtlib.org.
