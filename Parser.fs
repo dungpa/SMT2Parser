@@ -17,15 +17,21 @@ type SMT2Parser<'a> = Parser<'a, unit>
 let SYMBOLS = "~!@$%^&*_-+=<>.?/"
 let isSymbol (c: char) = SYMBOLS.Contains(string c)
 
+let ws = spaces
+let ws1 = spaces1
+
 let chr = skipChar
-let chr_ws c = skipChar c .>> spaces
-let ws_chr c = spaces >>. skipChar c
+let chr_ws c = chr c .>> ws
+let ws_chr c = ws >>. chr c
 
 let str s = skipString s
-let str_ws s = skipString s .>> spaces
-let ws_str s = spaces >>. skipString s
+let str_ws s = str s .>> ws
+let ws_str s = ws >>. str s
 
 let betweenStrings s1 s2 p = str s1 >>. p .>> str s2
+
+let lparen = pstring "(" .>> ws
+let rparen = ws >>. pstring ")"
 
 let resultSatisfies predicate msg (p: SMT2Parser<_>): SMT2Parser<_> =
     let error = messageError msg
@@ -40,26 +46,25 @@ let resultSatisfies predicate msg (p: SMT2Parser<_>): SMT2Parser<_> =
 // Lexical syntax
 
 // Currently not keep information about comments
-let comment = spaces >>. chr ';' .>> skipRestOfLine true
+let comment = ws >>. chr ';' .>> skipRestOfLine true
 
-// Doesn't check for integer overflow.
-let pnumeral = many1Satisfy isDigit |>> bigint.Parse
+let pnumeral = many1SatisfyL isDigit "digit" |>> bigint.Parse
 
 let numeralOrdecimal = 
-    pipe2 (many1Satisfy isDigit) (chr '.' >>. many1Satisfy isDigit |> opt)
+    pipe2 (many1SatisfyL isDigit "digit") (chr '.' >>. many1SatisfyL isDigit "decimal digit" |> opt)
           (fun s1 optS2 -> match optS2 with
                            | Some s2 -> sprintf "%s.%s" s1 s2 |> Convert.ToDecimal |> Decimal
                            | None -> s1 |> bigint.Parse |> Numeral)
 
 let hexadecimal =
-    str "#x" >>. many1Satisfy isHex
-    |>> (fun hexStr -> BigInteger.Parse(hexStr, NumberStyles.AllowHexSpecifier) |> Hexadecimal)
+    str "#x" >>. many1SatisfyL isHex "hex digit"
+    |>> (fun hexStr -> bigint.Parse(hexStr, NumberStyles.AllowHexSpecifier) |> Hexadecimal)
 
 let binary =
-    str "#b" >>. many1Satisfy (fun c -> c = '0' || c = '1')
-    |>> (fun binStr -> let s = (new String('0', 8-binStr.Length%8)) + binStr
+    str "#b" >>. many1SatisfyL (fun c -> c = '0' || c = '1') "binary digit"
+    |>> (fun binStr -> let s = (new String('0', 8-(binStr.Length%8))) + binStr
                        let nBytes = s.Length/8
-                       Array.init nBytes (fun i -> i+1) 
+                       Array.init nBytes id 
                        |> Array.map (fun i -> Convert.ToByte(s.Substring(8*i, 8), 2))
                        |> fun bs -> bigint(bs)
                        |> Binary)
@@ -73,7 +78,7 @@ let number =
             "number literal"
 
 let pStringLiteral = 
-    spaces >>. betweenStrings "\"" "\"" (manySatisfy ((<>) '"'))
+    ws >>. betweenStrings "\"" "\"" (manySatisfy ((<>) '"'))
 
 let stringLiteral = pStringLiteral |>> String
 
@@ -91,39 +96,39 @@ let reservedWords = set [
 
 let pSymbol =
     betweenStrings "|" "|" (manySatisfy ((<>) '|'))
-    <|> (many1Satisfy2 (fun c -> isLetter c || isSymbol c) (fun c -> isDigit c || isLetter c || isSymbol c)
+    <|> (many1Satisfy2L (fun c -> isLetter c || isSymbol c) (fun c -> isDigit c || isLetter c || isSymbol c) "simple symbol"
          |> resultSatisfies (not << reservedWords.Contains) "Should not be a reserved word")
     
 let symbol = pSymbol |>> Symbol
 
 let pKeyword = 
-    many1Satisfy2 (fun c -> c = ':') (fun c -> isDigit c || isLetter c || isSymbol c)
+    many1Satisfy2L (fun c -> c = ':') (fun c -> isDigit c || isLetter c || isSymbol c) "keyword starting with ':'"
 
 let keyword = pKeyword |>> Keyword
 
 // You need to refer to sexpr from the productions below, hence the forward declaration trick 
 let sexpr, sexprRef = createParserForwardedToRef() 
  
-// Just expressions separated by one or more spaces 
+// Just expressions separated by one or more ws 
 let sexpList = sepEndBy sexpr spaces1
 
 do sexprRef := choiceL [
                         sconst |>> Const;                      
                         keyword |>> Kw;
                         symbol |>> Sb;
-                        chr_ws '(' >>. sexpList .>> ws_chr ')' |>> List;                        
+                        lparen >>. sexpList .>> rparen |>> List;                        
                         ]
                         "sexpression"
 
 // Changed numeral to pnumeral        
 let indexedId = 
-    (chr_ws '(' >>. chr '_' >>. spaces1 >>. symbol) .>>. (spaces1 >>. sepEndBy1 pnumeral spaces1 .>> ws_chr ')')
+    tuple2 (chr '_' >>. spaces1 >>. symbol) (spaces1 >>. sepEndBy1 pnumeral spaces1)
     |>> IndexedId
 
 let identifier = 
     choiceL [
              symbol |>> Id;
-             indexedId;
+             lparen >>? indexedId .>> rparen; // conflict with '(' of terms.
             ]
             "identifier"
 
@@ -146,63 +151,63 @@ let sort, sortRef = createParserForwardedToRef()
 let pSortList1 = sepEndBy1 sort spaces1
 
 let compSort = 
-    (chr_ws '(' >>. identifier) .>>. (spaces1 >>. pSortList1 .>> ws_chr ')')
+    tuple2 (lparen >>. identifier) (spaces1 >>. pSortList1 .>> rparen)
     |>> CompSort
 
 do sortRef :=  choiceL [
-                        attempt identifier |>> Sort; 
-                        compSort; // The order shouldn't matter
+                        identifier |>> Sort; 
+                        compSort;
                         ]
                        "sort" 
 
 let compQualIdent =
-    (chr_ws '(' >>. str "as" >>. spaces1 >>. identifier) .>>. (spaces1 >>. sort .>> ws_chr ')')
+    tuple2 (str "as" >>. spaces1 >>. identifier) (spaces1 >>. sort)
     |>> CompQualIdent
 
 let qualIdent = 
     choiceL [   
              identifier |>> QualIdent;
-             compQualIdent;
+             lparen >>? compQualIdent .>> rparen; // conflict with '(' of terms.
              ]
             "qualified identifier"
 
 let sortedVar = 
-    (chr_ws '(' >>. symbol) .>>. (spaces1 >>. sort .>> ws_chr ')')
+    tuple2 (lparen >>. symbol) (spaces1 >>. sort .>> rparen)
     |>> SortedVar
 
-let term, termRef: SMT2Parser<_> * SMT2Parser<_> ref = createParserForwardedToRef() 
+// Keep term in this form to avoid stackoverflow too soon.
+let term, termRef = createParserForwardedToRef() 
  
 let pTermList1 = sepEndBy1 term spaces1
 
 let varBinding = 
-    (chr_ws '(' >>. symbol)
-    .>>. (spaces1 >>. term .>> ws_chr ')')
+    tuple2 (lparen >>. symbol) (spaces1 >>. term .>> rparen)
     |>> VarBinding
 
 let ``let`` = 
-    (chr_ws '(' >>? str_ws "let" >>. chr_ws '(' >>. sepEndBy1 varBinding spaces1 .>> ws_chr ')') .>>. (spaces >>. term .>> ws_chr ')')
+    tuple2 (lparen >>? str_ws "let" >>. lparen >>. sepEndBy1 varBinding spaces1 .>> rparen) (ws >>. term .>> rparen)
     |>> Let
 
 let forall =
-    (chr_ws '(' >>? str_ws "forall" >>. chr_ws '(' >>. sepEndBy1 sortedVar spaces1 .>> ws_chr ')') .>>. (spaces >>. term .>> ws_chr ')')
+    tuple2 (lparen >>? str_ws "forall" >>. lparen >>. sepEndBy1 sortedVar spaces1 .>> rparen) (ws >>. term .>> rparen)
     |>> Forall
 
 let exists =
-    (chr_ws '(' >>? str_ws "exists" >>. chr_ws '(' >>. sepEndBy1 sortedVar spaces1 .>> ws_chr ')') .>>. (spaces >>. term .>> ws_chr ')')
+    tuple2 (lparen >>? str_ws "exists" >>. lparen >>. sepEndBy1 sortedVar spaces1 .>> rparen) (ws >>. term .>> rparen)
     |>> Exists
 
 let bang =
-    (chr_ws '(' >>?  str "!" >>. spaces1 >>. term) .>>. (spaces1 >>. sepEndBy1 attribute spaces1 .>> ws_chr ')')
+    tuple2 (lparen >>?  str "!" >>. spaces1 >>. term) (spaces1 >>. sepEndBy1 attribute spaces1 .>> rparen)
     |>> AttrTerm
 
 let compQualTerm =
-    (chr_ws '(' >>? qualIdent) .>>. (spaces1 >>. pTermList1 .>> ws_chr ')')
+    tuple2 (lparen >>? qualIdent) (spaces1 >>. pTermList1 .>> rparen)
     |>> CompQualTerm
     
 // Need to control backtracking smarter
 do termRef :=  choiceL [
                         sconst |>> ConstTerm;
-                        attempt qualIdent |>> QualTerm; // if not QualTerm, could be compQualTerm 
+                        qualIdent |>> QualTerm; // if not QualTerm, could be compQualTerm 
                         compQualTerm;
                         ``let``;
                         bang;
@@ -215,17 +220,17 @@ do termRef :=  choiceL [
 
 // NB: currently not support Logic Declarations
 
-let boolean = (stringReturn "true" true) <|> (stringReturn "false" false)
+let pboolean = (stringReturn "true" true) <|> (stringReturn "false" false)
 
 let boolConfig =
     choice [ 
-            str_ws ":print-success" >>. boolean |>> (fun b -> BoolConfig(BCT.``:print-success``, b));
-            str_ws ":expand-definitions" >>. boolean |>> (fun b -> BoolConfig(BCT.``:expand-definitions``, b));
-            str_ws ":interactive-mode" >>. boolean |>> (fun b -> BoolConfig(BCT.``:interactive-mode``, b));
-            str_ws ":produce-proofs" >>. boolean |>> (fun b -> BoolConfig(BCT.``:produce-proofs``, b));
-            str_ws ":produce-unsat-cores" >>. boolean |>> (fun b -> BoolConfig(BCT.``:produce-unsat-cores``, b));
-            str_ws ":produce-models" >>. boolean |>> (fun b -> BoolConfig(BCT.``:produce-models``, b));
-            str_ws ":produce-assignments" >>. boolean |>> (fun b -> BoolConfig(BCT.``:produce-assignments``, b));
+            str_ws ":print-success" >>. pboolean |>> (fun b -> BoolConfig(BCT.``:print-success``, b));
+            str_ws ":expand-definitions" >>. pboolean |>> (fun b -> BoolConfig(BCT.``:expand-definitions``, b));
+            str_ws ":interactive-mode" >>. pboolean |>> (fun b -> BoolConfig(BCT.``:interactive-mode``, b));
+            str_ws ":produce-proofs" >>. pboolean |>> (fun b -> BoolConfig(BCT.``:produce-proofs``, b));
+            str_ws ":produce-unsat-cores" >>. pboolean |>> (fun b -> BoolConfig(BCT.``:produce-unsat-cores``, b));
+            str_ws ":produce-models" >>. pboolean |>> (fun b -> BoolConfig(BCT.``:produce-models``, b));
+            str_ws ":produce-assignments" >>. pboolean |>> (fun b -> BoolConfig(BCT.``:produce-assignments``, b));
             ]
 
 let stringConfig =
@@ -261,56 +266,57 @@ let infoFlag =
                  | s -> CustomFlag (Keyword s)
 
 let declareSort =
-    tuple2 (chr_ws '(' >>? str "declare-sort" >>. spaces1 >>. symbol)
-           (spaces1 >>. pnumeral .>>  ws_chr ')')
+    tuple2 (str "declare-sort" >>. spaces1 >>. symbol)
+           (spaces1 >>. pnumeral)
     |>> DeclareSort
 
 let defineSort =
-    tuple3 (chr_ws '(' >>? str "define-sort" >>. spaces1 >>. symbol)
-           (spaces >>. chr_ws '(' >>. sepEndBy symbol spaces1 .>>  ws_chr ')')
-           (spaces >>. sort .>> ws_chr ')')
+    tuple3 (str "define-sort" >>. spaces1 >>. symbol)
+           (ws >>. lparen >>. sepEndBy symbol spaces1 .>> rparen)
+           (ws >>. sort)
     |>> DefineSort
 
 let declareFun =
-    tuple3 (chr_ws '(' >>? str "declare-fun" >>. spaces1 >>. symbol)
-           (spaces >>. chr_ws '(' >>. sepEndBy sort spaces1 .>>  ws_chr ')')
-           (spaces >>. sort .>> ws_chr ')')
+    tuple3 (str "declare-fun" >>. spaces1 >>. symbol)
+           (ws >>. lparen >>. sepEndBy sort spaces1 .>> rparen)
+           (ws >>. sort)
     |>> DeclareFun
 
 let defineFun =
-    tuple4 (chr_ws '(' >>? str "define-fun" >>. spaces1 >>. symbol)
-           (spaces >>. chr_ws '(' >>. sepEndBy sortedVar spaces1 .>>  ws_chr ')')
-           (spaces >>. sort)
-           (spaces >>. term .>> ws_chr ')')
+    tuple4 (str "define-fun" >>. spaces1 >>. symbol)
+           (ws >>. lparen >>. sepEndBy sortedVar spaces1 .>> rparen)
+           (ws >>. sort)
+           (ws >>. term)
     |>> DefineFun
 
-let command = 
-    choiceL [
-             chr_ws '(' >>? str "check-sat" .>> ws_chr ')' |>> (fun _ -> CheckSat);
-             chr_ws '(' >>? str "get-assertions" .>> ws_chr ')' |>> (fun _ -> GetAssertions);
-             chr_ws '(' >>? str "get-proof" .>> ws_chr ')' |>> (fun _ -> GetProof);
-             chr_ws '(' >>? str "get-unsat-core" .>> ws_chr ')' |>> (fun _ -> GetUnsatCore);
-             chr_ws '(' >>? str "get-assignment" .>> ws_chr ')' |>> (fun _ -> GetAssignment);
-             chr_ws '(' >>? str "exit" .>> ws_chr ')' |>> (fun _ -> Exit);
+let command =
+    [
+        str "check-sat" |>> (fun _ -> CheckSat);
+        str "get-assertions" |>> (fun _ -> GetAssertions);
+        str "get-proof" |>> (fun _ -> GetProof);
+        str "get-unsat-core"  |>> (fun _ -> GetUnsatCore);
+        str "get-assignment" |>> (fun _ -> GetAssignment);
+        str "exit" |>> (fun _ -> Exit);
 
-             chr_ws '(' >>? str "set-logic" .>> spaces1 >>. symbol .>> ws_chr ')' |>> SetLogic;
-             chr_ws '(' >>? str "set-option" .>> spaces1 >>. option .>> ws_chr ')' |>> SetOption;
-             chr_ws '(' >>? str "set-info" .>> spaces1 >>. attribute .>> ws_chr ')' |>> SetInfo;
-             chr_ws '(' >>? str "push" .>> spaces1 >>. pnumeral .>> ws_chr ')' |>> Push;
-             chr_ws '(' >>? str "pop" .>> spaces1 >>. pnumeral .>> ws_chr ')' |>> Pop;
-             chr_ws '(' >>? str "assert" .>> spaces1 >>. term .>> ws_chr ')' |>> Assert;
-             chr_ws '(' >>? str "get-value" .>> spaces >>. chr_ws '(' >>. sepEndBy1 term spaces1 .>> ws_chr ')' .>> ws_chr ')' |>> GetValue;
-             chr_ws '(' >>? str "get-option" .>> spaces1 >>. keyword .>> ws_chr ')' |>> GetOption;
-             chr_ws '(' >>? str "get-info" .>> spaces1 >>. infoFlag .>> ws_chr ')' |>> GetInfo;
+        str "set-logic" .>> spaces1 >>. symbol |>> SetLogic;
+        str "set-option" .>> spaces1 >>. option |>> SetOption;
+        str "set-info" .>> spaces1 >>. attribute |>> SetInfo;
+        str "push" .>> spaces1 >>. pnumeral |>> Push;
+        str "pop" .>> spaces1 >>. pnumeral |>> Pop;
+        str "assert" .>> spaces1 >>. term |>> Assert;
+        str "get-value" .>> ws >>. lparen >>. sepEndBy1 term spaces1 .>> rparen |>> GetValue;
+        str "get-option" .>> spaces1 >>. keyword |>> GetOption;
+        str "get-info" .>> spaces1 >>. infoFlag |>> GetInfo;
 
-             declareSort;
-             defineSort;
-             declareFun;
-             defineFun;
-            ]
-            "command"
+        declareSort;
+        defineSort;
+        declareFun;
+        defineFun;
+        ]
+    |> choice
+    |> between lparen rparen
 
-let script = sepEndBy command (skipSepBy spaces comment) .>> eof
+let script = sepEndBy command (skipSepBy ws comment) .>> eof
 
 let parseCommand str = 
     match run command str with

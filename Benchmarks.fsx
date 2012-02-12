@@ -12,7 +12,7 @@ let rec allFiles dir =
           yield! Seq.collect allFiles (Directory.GetDirectories dir) }
 
 let allSMT2Files dir =
-    dir |> allFiles |> Seq.filter (fun f -> f.EndsWith(".smt2"))
+    dir |> allFiles |> Seq.filter (fun f -> f.EndsWith(".smt2") || f.EndsWith(".smt"))
 
 let smt2Files = allSMT2Files (Path.Combine(__SOURCE_DIRECTORY__, "benchmarks"))
 let sw = new System.Diagnostics.Stopwatch()

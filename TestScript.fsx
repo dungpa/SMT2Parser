@@ -83,7 +83,7 @@ let testAll p xs =
 "true";
 "false";
 ]
-|> testAll boolean;;
+|> testAll pboolean;;
 
-let s = File.ReadAllText (__SOURCE_DIRECTORY__ + "\\tests\\test10.smt2")
-let ast = parseCommand s;;
+//let s = File.ReadAllText (__SOURCE_DIRECTORY__ + "\\tests\\test10.smt2")
+//let ast = parseCommand s;;

@@ -48,4 +48,4 @@
 - Changed to use bigint.
 - Have a stack overflow due to deep nesting of let bindings.
 - Currently parse successfully around 3000 benchmarks.
-- Due to the huge size of benchmarks, they are not included in repo, download them at smtlib.org.
+- Due to the huge size of benchmarks, they are not included in repo, download them at smt-lib.org.
