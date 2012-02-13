@@ -14,7 +14,7 @@ type Sconstant =
     | String of string
 with override sc.ToString() =
         match sc with
-        | Numeral n | Hexadecimal n | Binary n -> sprintf "%A" n // May output to appropriate formats
+        | Numeral n | Hexadecimal n | Binary n -> sprintf "%s" (string n) // May output to appropriate formats
         | Decimal f -> sprintf "%.1f" f        
         | String s -> sprintf "\"%s\"" s
     
@@ -46,7 +46,7 @@ type Identifier =
 with override id.ToString() =
         match id with
         | Id sb -> string sb
-        | IndexedId(sb, ns) -> sprintf "(_%s %s)" (string sb) (lst2Str ns)
+        | IndexedId(sb, ns) -> sprintf "(_ %s %s)" (string sb) (lst2Str ns)
 
 type AttrVal = 
     | AttrConst of Sconstant
@@ -136,7 +136,7 @@ with override o.ToString() =
         match o with
         | BoolConfig(bct, b) -> sprintf "%s %b" (string bct) b
         | StringConfig(sct, s) -> sprintf "%s \"%s\"" (string sct) s
-        | NumeralConfig(nct, n) -> sprintf "%s %A" (string nct) n
+        | NumeralConfig(nct, n) -> sprintf "%s %s" (string nct) (string n)
         | AttrOption ao -> string ao
 
 type Flag = 
@@ -181,12 +181,12 @@ with override c.ToString() =
         | SetLogic s -> sprintf "(set-logic %s)" <| string s
         | SetOption o -> sprintf "(set-option %s)" <| string o
         | SetInfo i -> sprintf "(set-info %s)" <| string i
-        | DeclareSort(s, n) -> sprintf "(declare-sort %s %A)" (string s) n
+        | DeclareSort(s, n) -> sprintf "(declare-sort %s %s)" (string s) (string n)
         | DefineSort(s1, ss, s2) -> sprintf "(define-sort %s (%s) %s)" (string s1) (lst2Str ss) (string s2)
         | DeclareFun(s1, ss, s2) -> sprintf "(declare-fun %s (%s) %s)" (string s1) (lst2Str ss) (string s2)
         | DefineFun(s1, svs, s2, t) -> sprintf "(define-fun %s (%s) %s %s)" (string s1) (lst2Str svs) (string s2) (string t)
-        | Push n -> sprintf "(push %A)" n
-        | Pop n -> sprintf "(pop %A)" n
+        | Push n -> sprintf "(push %s)" (string n)
+        | Pop n -> sprintf "(pop %s)" (string n)
         | Assert t -> sprintf "(assert %s)" <| string t
         | CheckSat -> "(check-sat)"
         | GetAssertions -> "(get-assertions)"

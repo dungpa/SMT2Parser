@@ -19,7 +19,7 @@ let rec allFiles dir =
 let allSMT2Files dir =
     dir |> allFiles |> Seq.filter (fun f -> f.EndsWith(".smt2") || f.EndsWith(".smt"))
 
-let smt2Files = allSMT2Files (Path.Combine(__SOURCE_DIRECTORY__, "benchmarks3"))
+let smt2Files = allSMT2Files (Path.Combine(__SOURCE_DIRECTORY__, "benchmarks"))
 
 let sw = new System.Diagnostics.Stopwatch()
 
@@ -30,7 +30,9 @@ let time fn x =
     (float sw.ElapsedMilliseconds)/1000.0
 
 let benchmarks() =
-    let logFile = Path.Combine(__SOURCE_DIRECTORY__,  "results3.txt")
+    let logFile = Path.Combine(__SOURCE_DIRECTORY__,  "results.txt")
+    printfn "Starting..."
+    File.WriteAllText(logFile, "Starting...\n") // rewrite the file
     smt2Files |> Seq.toArray 
               |> Array.iter (fun f ->
                                 try
@@ -44,7 +46,7 @@ let benchmarks() =
                                           File.AppendAllText(logFile, sprintf "Parsing failed with the error: %s\n" ex.Message)
                                           )
     printfn "Done."
-    File.AppendAllText(logFile, "Done")
+    File.AppendAllText(logFile, "Done.\n")
 
 
 #if INTERACTIVE

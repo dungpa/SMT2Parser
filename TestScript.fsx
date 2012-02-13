@@ -86,3 +86,5 @@ let testAll p xs =
 |> testAll pboolean;;
 
 let s = parseFile (__SOURCE_DIRECTORY__ + "\\tests\\test01.smt2");;
+
+let c = isLetter 'C';;

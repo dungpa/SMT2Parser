@@ -15,8 +15,7 @@ open SMT2Parser.Ast
 type SMT2Parser<'a> = Parser<'a, unit> 
 
 let SYMBOLS = "~!@$%^&*_-+=<>.?/"
-let isSymbol (c: char) = String.exists ((=) c) SYMBOLS
-                 //SYMBOLS.Contains(string c)
+let isSymbol c = String.exists ((=) c) SYMBOLS
 let ws = spaces
 let ws1 = spaces1
 
@@ -207,7 +206,7 @@ let compQualTerm =
 // Need to control backtracking smarter
 do termRef :=  choiceL [
                         sconst |>> ConstTerm;
-                        qualIdent |>> QualTerm; // if not QualTerm, could be compQualTerm 
+                        attempt qualIdent |>> QualTerm; // if failed to be QualTerm, could be compQualTerm 
                         compQualTerm;
                         ``let``;
                         bang;

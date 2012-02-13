@@ -162,45 +162,55 @@ let testGetInfo() =
 // Following tests are extracted from Z3's guide at http://rise4fun.com/z3/tutorial/guide
 [<Fact>]
 let fileTestBasic() =
-    let s = File.ReadAllText "..\\..\\tests\\test01.smt2"
+    let s = File.ReadAllText "..\\..\\tests\\basic.smt2"
     testParse s s
 
 [<Fact>]
 let fileTestScope() =    
-    let s = File.ReadAllText "..\\..\\tests\\test02.smt2"
+    let s = File.ReadAllText "..\\..\\tests\\scope.smt2"
     testParse s s
 
 [<Fact>]
 let fileTestConfiguration() =    
-    let s = File.ReadAllText "..\\..\\tests\\test03.smt2"
+    let s = File.ReadAllText "..\\..\\tests\\config.smt2"
     testParse s s
 
 [<Fact>]
 let fileTestDefineSort() =    
-    let s = File.ReadAllText "..\\..\\tests\\test04.smt2"
+    let s = File.ReadAllText "..\\..\\tests\\define_sort.smt2"
     testParse s s
 
 [<Fact>]
 let fileTestArith() =    
-    let s = File.ReadAllText "..\\..\\tests\\test05.smt2"
+    let s = File.ReadAllText "..\\..\\tests\\arith.smt2"
     testParse s s
 
 [<Fact>]
 let fileTestDivMinus() =    
-    let s = File.ReadAllText "..\\..\\tests\\test06.smt2"
+    let s = File.ReadAllText "..\\..\\tests\\div_minus.smt2"
     testParse s s
 
 [<Fact>]
 let fileTestBitvec() =    
-    let s = File.ReadAllText "..\\..\\tests\\test07.smt2"
+    let s = File.ReadAllText "..\\..\\tests\\bitvec.smt2"
     testParse s s
 
 [<Fact>]
 let fileTestQuantifier() =    
-    let s = File.ReadAllText "..\\..\\tests\\test08.smt2"
+    let s = File.ReadAllText "..\\..\\tests\\quant.smt2"
     testParse s s
 
 [<Fact>]
 let fileTestPattern() =    
-    let s = File.ReadAllText "..\\..\\tests\\test09.smt2"
+    let s = File.ReadAllText "..\\..\\tests\\pattern.smt2"
+    testParse s s
+
+[<Fact>]
+let fileTestBacktracking() =    
+    let s = File.ReadAllText "..\\..\\tests\\backtracking.smt2"
+    testParse s s
+
+[<Fact>]
+let fileTestBigNum() =    
+    let s = File.ReadAllText "..\\..\\tests\\bignum.smt2"
     testParse s s
