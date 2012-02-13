@@ -6,7 +6,7 @@
     <ProductVersion>8.0.30703</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{4404bbc5-5ce1-44e2-9c78-cb632c217064}</ProjectGuid>
-    <OutputType>Library</OutputType>
+    <OutputType>Exe</OutputType>
     <RootNamespace>SMT2Parser</RootNamespace>
     <AssemblyName>SMT2Parser</AssemblyName>
     <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
@@ -60,7 +60,8 @@
     <Compile Include="Ast.fs" />
     <Compile Include="Parser.fs" />
     <None Include="TestScript.fsx" />
-    <None Include="Benchmarks.fsx" />
+    <None Include="Demo.fsx" />
+    <Compile Include="Benchmarks.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="FParsec">

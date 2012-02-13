@@ -15,8 +15,8 @@ open SMT2Parser.Ast
 type SMT2Parser<'a> = Parser<'a, unit> 
 
 let SYMBOLS = "~!@$%^&*_-+=<>.?/"
-let isSymbol (c: char) = SYMBOLS.Contains(string c)
-
+let isSymbol (c: char) = String.exists ((=) c) SYMBOLS
+                 //SYMBOLS.Contains(string c)
 let ws = spaces
 let ws1 = spaces1
 
@@ -110,7 +110,7 @@ let keyword = pKeyword |>> Keyword
 let sexpr, sexprRef = createParserForwardedToRef() 
  
 // Just expressions separated by one or more ws 
-let sexpList = sepEndBy sexpr spaces1
+let sexpList = sepEndBy sexpr ws1
 
 do sexprRef := choiceL [
                         sconst |>> Const;                      
@@ -122,7 +122,7 @@ do sexprRef := choiceL [
 
 // Changed numeral to pnumeral        
 let indexedId = 
-    tuple2 (chr '_' >>. spaces1 >>. symbol) (spaces1 >>. sepEndBy1 pnumeral spaces1)
+    tuple2 (chr '_' >>. ws1 >>. symbol) (ws1 >>. sepEndBy1 pnumeral ws1)
     |>> IndexedId
 
 let identifier = 
@@ -141,17 +141,17 @@ let attrVal =
             "attribute value"
 
 let attribute =    
-    pipe2 keyword (spaces1 >>. attrVal |> opt)
+    pipe2 keyword (ws1 >>. attrVal |> opt)
           (fun k optAv -> match optAv with
                           | Some av -> CompAttr(k, av)  
                           | None -> Attr k)
 
 let sort, sortRef = createParserForwardedToRef() 
  
-let pSortList1 = sepEndBy1 sort spaces1
+let pSortList1 = sepEndBy1 sort ws1
 
 let compSort = 
-    tuple2 (lparen >>. identifier) (spaces1 >>. pSortList1 .>> rparen)
+    tuple2 (lparen >>. identifier) (ws1 >>. pSortList1 .>> rparen)
     |>> CompSort
 
 do sortRef :=  choiceL [
@@ -161,7 +161,7 @@ do sortRef :=  choiceL [
                        "sort" 
 
 let compQualIdent =
-    tuple2 (str "as" >>. spaces1 >>. identifier) (spaces1 >>. sort)
+    tuple2 (str "as" >>. ws1 >>. identifier) (ws1 >>. sort)
     |>> CompQualIdent
 
 let qualIdent = 
@@ -172,36 +172,36 @@ let qualIdent =
             "qualified identifier"
 
 let sortedVar = 
-    tuple2 (lparen >>. symbol) (spaces1 >>. sort .>> rparen)
+    tuple2 (lparen >>. symbol) (ws1 >>. sort .>> rparen)
     |>> SortedVar
 
 // Keep term in this form to avoid stackoverflow too soon.
 let term, termRef = createParserForwardedToRef() 
  
-let pTermList1 = sepEndBy1 term spaces1
+let pTermList1 = sepEndBy1 term ws1
 
 let varBinding = 
-    tuple2 (lparen >>. symbol) (spaces1 >>. term .>> rparen)
+    tuple2 (lparen >>. symbol) (ws1 >>. term .>> rparen)
     |>> VarBinding
 
 let ``let`` = 
-    tuple2 (lparen >>? str_ws "let" >>. lparen >>. sepEndBy1 varBinding spaces1 .>> rparen) (ws >>. term .>> rparen)
+    tuple2 (lparen >>? str_ws "let" >>. lparen >>. sepEndBy1 varBinding ws1 .>> rparen) (ws >>. term .>> rparen)
     |>> Let
 
 let forall =
-    tuple2 (lparen >>? str_ws "forall" >>. lparen >>. sepEndBy1 sortedVar spaces1 .>> rparen) (ws >>. term .>> rparen)
+    tuple2 (lparen >>? str_ws "forall" >>. lparen >>. sepEndBy1 sortedVar ws1 .>> rparen) (ws >>. term .>> rparen)
     |>> Forall
 
 let exists =
-    tuple2 (lparen >>? str_ws "exists" >>. lparen >>. sepEndBy1 sortedVar spaces1 .>> rparen) (ws >>. term .>> rparen)
+    tuple2 (lparen >>? str_ws "exists" >>. lparen >>. sepEndBy1 sortedVar ws1 .>> rparen) (ws >>. term .>> rparen)
     |>> Exists
 
 let bang =
-    tuple2 (lparen >>?  str "!" >>. spaces1 >>. term) (spaces1 >>. sepEndBy1 attribute spaces1 .>> rparen)
+    tuple2 (lparen >>?  str "!" >>. ws1 >>. term) (ws1 >>. sepEndBy1 attribute ws1 .>> rparen)
     |>> AttrTerm
 
 let compQualTerm =
-    tuple2 (lparen >>? qualIdent) (spaces1 >>. pTermList1 .>> rparen)
+    tuple2 (lparen >>? qualIdent) (ws1 >>. pTermList1 .>> rparen)
     |>> CompQualTerm
     
 // Need to control backtracking smarter
@@ -266,25 +266,25 @@ let infoFlag =
                  | s -> CustomFlag (Keyword s)
 
 let declareSort =
-    tuple2 (str "declare-sort" >>. spaces1 >>. symbol)
-           (spaces1 >>. pnumeral)
+    tuple2 (str "declare-sort" >>. ws1 >>. symbol)
+           (ws1 >>. pnumeral)
     |>> DeclareSort
 
 let defineSort =
-    tuple3 (str "define-sort" >>. spaces1 >>. symbol)
-           (ws >>. lparen >>. sepEndBy symbol spaces1 .>> rparen)
+    tuple3 (str "define-sort" >>. ws1 >>. symbol)
+           (ws >>. lparen >>. sepEndBy symbol ws1 .>> rparen)
            (ws >>. sort)
     |>> DefineSort
 
 let declareFun =
-    tuple3 (str "declare-fun" >>. spaces1 >>. symbol)
-           (ws >>. lparen >>. sepEndBy sort spaces1 .>> rparen)
+    tuple3 (str "declare-fun" >>. ws1 >>. symbol)
+           (ws >>. lparen >>. sepEndBy sort ws1 .>> rparen)
            (ws >>. sort)
     |>> DeclareFun
 
 let defineFun =
-    tuple4 (str "define-fun" >>. spaces1 >>. symbol)
-           (ws >>. lparen >>. sepEndBy sortedVar spaces1 .>> rparen)
+    tuple4 (str "define-fun" >>. ws1 >>. symbol)
+           (ws >>. lparen >>. sepEndBy sortedVar ws1 .>> rparen)
            (ws >>. sort)
            (ws >>. term)
     |>> DefineFun
@@ -298,15 +298,15 @@ let command =
         str "get-assignment" |>> (fun _ -> GetAssignment);
         str "exit" |>> (fun _ -> Exit);
 
-        str "set-logic" .>> spaces1 >>. symbol |>> SetLogic;
-        str "set-option" .>> spaces1 >>. option |>> SetOption;
-        str "set-info" .>> spaces1 >>. attribute |>> SetInfo;
-        str "push" .>> spaces1 >>. pnumeral |>> Push;
-        str "pop" .>> spaces1 >>. pnumeral |>> Pop;
-        str "assert" .>> spaces1 >>. term |>> Assert;
-        str "get-value" .>> ws >>. lparen >>. sepEndBy1 term spaces1 .>> rparen |>> GetValue;
-        str "get-option" .>> spaces1 >>. keyword |>> GetOption;
-        str "get-info" .>> spaces1 >>. infoFlag |>> GetInfo;
+        str "set-logic" .>> ws1 >>. symbol |>> SetLogic;
+        str "set-option" .>> ws1 >>. option |>> SetOption;
+        str "set-info" .>> ws1 >>. attribute |>> SetInfo;
+        str "push" .>> ws1 >>. pnumeral |>> Push;
+        str "pop" .>> ws1 >>. pnumeral |>> Pop;
+        str "assert" .>> ws1 >>. term |>> Assert;
+        str "get-value" .>> ws >>. lparen >>. sepEndBy1 term ws1 .>> rparen |>> GetValue;
+        str "get-option" .>> ws1 >>. keyword |>> GetOption;
+        str "get-info" .>> ws1 >>. infoFlag |>> GetInfo;
 
         declareSort;
         defineSort;
